@@ -2,125 +2,165 @@
  * echarts组件：图例
  *
  * @desc echarts基于Canvas，纯Javascript图表库，提供直观，生动，可交互，可个性化定制的数据统计图表。
- * @author Kener (@Kener-林峰, linzhifeng@baidu.com)
+ * @author Kener (@Kener-林峰, kener.linfeng@gmail.com)
  *
  */
 define(function (require) {
+    var Base = require('./base');
+    
+    // 图形依赖
+    var TextShape = require('zrender/shape/Text');
+    var RectangleShape = require('zrender/shape/Rectangle');
+    var SectorShape = require('zrender/shape/Sector');
+    //var BeziercurveShape = require('zrender/shape/Beziercurve');
+    var IconShape = require('../util/shape/Icon');
+    var CandleShape = require('../util/shape/Candle');
+    
+    var ecConfig = require('../config');
+     // 图例
+    ecConfig.legend = {
+        zlevel: 0,                  // 一级层叠
+        z: 4,                       // 二级层叠
+        show: true,
+        orient: 'horizontal',      // 布局方式，默认为水平布局，可选为：
+                                   // 'horizontal' ¦ 'vertical'
+        x: 'center',               // 水平安放位置，默认为全图居中，可选为：
+                                   // 'center' ¦ 'left' ¦ 'right'
+                                   // ¦ {number}（x坐标，单位px）
+        y: 'top',                  // 垂直安放位置，默认为全图顶端，可选为：
+                                   // 'top' ¦ 'bottom' ¦ 'center'
+                                   // ¦ {number}（y坐标，单位px）
+        backgroundColor: 'rgba(0,0,0,0)',
+        borderColor: '#ccc',       // 图例边框颜色
+        borderWidth: 0,            // 图例边框线宽，单位px，默认为0（无边框）
+        padding: 5,                // 图例内边距，单位px，默认各方向内边距为5，
+                                   // 接受数组分别设定上右下左边距，同css
+        itemGap: 10,               // 各个item之间的间隔，单位px，默认为10，
+                                   // 横向布局时为水平间隔，纵向布局时为纵向间隔
+        itemWidth: 20,             // 图例图形宽度
+        itemHeight: 14,            // 图例图形高度
+        textStyle: {
+            color: '#333'          // 图例文字颜色
+        },
+        selectedMode: true         // 选择模式，默认开启图例开关
+        // selected: null,         // 配置默认选中状态，可配合LEGEND.SELECTED事件做动态数据载入
+        // data: [],               // 图例内容（详见legend.data，数组中每一项代表一个item
+    };
+
+    var zrUtil = require('zrender/tool/util');
+    var zrArea = require('zrender/tool/area');
+
     /**
      * 构造函数
      * @param {Object} messageCenter echart消息中心
      * @param {ZRender} zr zrender实例
      * @param {Object} option 图表参数
-     * @param {Object=} selected 用于状态保持
      */
-    function Legend(ecConfig, messageCenter, zr, option, selected) {
-        var Base = require('./base');
-        Base.call(this, ecConfig, zr);
-
-        var zrUtil = require('zrender/tool/util');
-        var zrArea = require('zrender/tool/area');
-        var zrColor = require('zrender/tool/color');
-
+    function Legend(ecTheme, messageCenter, zr, option, myChart) {
+        if (!this.query(option, 'legend.data')) {
+            console.error('option.legend.data has not been defined.');
+            return;
+        }
+        
+        Base.call(this, ecTheme, messageCenter, zr, option, myChart);
+        
         var self = this;
-        self.type = ecConfig.COMPONENT_TYPE_LEGEND;
-
-        var legendOption;                       // 图例选项，共享数据源
-        var _zlevelBase = self.getZlevelBase();
-
-        var _itemGroupLocation = {};    // 图例元素组的位置参数，通过计算所得x, y, width, height
-
-        var _colorIndex = 0;
-        var _colorMap = {};
-        var _selectedMap = {};
-
-        var icon = require('zrender/shape').get('icon');
-        for (var k in legendIcon) {
-            icon.define('legendicon' + k, legendIcon[k]);
-            //console.log('legendicon' + k, legendIcon[k])
-        }
-
-        function _buildShape() {
-            _itemGroupLocation = _getItemGroupLocation();
-
-            _buildBackground();
-            _buildItem();
-
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                self.shapeList[i].id = zr.newShapeId(self.type);
-                zr.addShape(self.shapeList[i]);
+        self._legendSelected = function (param) {
+            self.__legendSelected(param);
+        };
+        self._dispatchHoverLink = function(param) {
+            return self.__dispatchHoverLink(param);
+        };
+        
+        this._colorIndex = 0;
+        this._colorMap = {};
+        this._selectedMap = {};
+        this._hasDataMap = {};
+        
+        this.refresh(option);
+    }
+    
+    Legend.prototype = {
+        type: ecConfig.COMPONENT_TYPE_LEGEND,
+        _buildShape: function () {
+            if (!this.legendOption.show) {
+                return;
             }
-        }
+            // 图例元素组的位置参数，通过计算所得x, y, width, height
+            this._itemGroupLocation = this._getItemGroupLocation();
+
+            this._buildBackground();
+            this._buildItem();
+
+            for (var i = 0, l = this.shapeList.length; i < l; i++) {
+                this.zr.addShape(this.shapeList[i]);
+            }
+        },
 
         /**
          * 构建所有图例元素
          */
-        function _buildItem() {
-            var data = legendOption.data;
+        _buildItem: function () {
+            var data = this.legendOption.data;
             var dataLength = data.length;
             var itemName;
             var itemType;
             var itemShape;
             var textShape;
-            var textStyle  = legendOption.textStyle;
+            var textStyle  = this.legendOption.textStyle;
             var dataTextStyle;
             var dataFont;
+            var formattedName;
 
-            var zrWidth = zr.getWidth();
-            var zrHeight = zr.getHeight();
-            var lastX = _itemGroupLocation.x;
-            var lastY = _itemGroupLocation.y;
-            var itemWidth = legendOption.itemWidth;
-            var itemHeight = legendOption.itemHeight;
-            var itemGap = legendOption.itemGap;
+            var zrWidth = this.zr.getWidth();
+            var zrHeight = this.zr.getHeight();
+            var lastX = this._itemGroupLocation.x;
+            var lastY = this._itemGroupLocation.y;
+            var itemWidth = this.legendOption.itemWidth;
+            var itemHeight = this.legendOption.itemHeight;
+            var itemGap = this.legendOption.itemGap;
             var color;
 
-            if (legendOption.orient == 'vertical'
-                && legendOption.x == 'right'
-            ) {
-                lastX = _itemGroupLocation.x
-                        + _itemGroupLocation.width
+            if (this.legendOption.orient === 'vertical' && this.legendOption.x === 'right') {
+                lastX = this._itemGroupLocation.x
+                        + this._itemGroupLocation.width
                         - itemWidth;
             }
 
             for (var i = 0; i < dataLength; i++) {
                 dataTextStyle = zrUtil.merge(
                     data[i].textStyle || {},
-                    textStyle,
-                    {'overwrite': false}
+                    textStyle
                 );
-                dataFont = self.getFont(dataTextStyle);
+                dataFont = this.getFont(dataTextStyle);
                 
-                itemName = data[i].name || data[i];
-                if (itemName === '') {
-                    if (legendOption.orient == 'horizontal') {
-                        lastX = _itemGroupLocation.x;
+                itemName = this._getName(data[i]);
+                formattedName = this._getFormatterName(itemName);
+                if (itemName === '') { // 别帮我代码优化
+                    if (this.legendOption.orient === 'horizontal') {
+                        lastX = this._itemGroupLocation.x;
                         lastY += itemHeight + itemGap;
                     }
                     else {
-                        legendOption.x == 'right'
-                        ? lastX -= _itemGroupLocation.maxWidth + itemGap
-                        : lastX += _itemGroupLocation.maxWidth + itemGap;
-                        lastY = _itemGroupLocation.y;
+                        this.legendOption.x === 'right'
+                            ? lastX -= this._itemGroupLocation.maxWidth + itemGap
+                            : lastX += this._itemGroupLocation.maxWidth + itemGap;
+                        lastY = this._itemGroupLocation.y;
                     }
                     continue;
                 }
-                itemType = _getSomethingByName(itemName).type;
+                itemType = data[i].icon || this._getSomethingByName(itemName).type;
                 
-                color = getColor(itemName);
+                color = this.getColor(itemName);
 
-                if (legendOption.orient == 'horizontal') {
+                if (this.legendOption.orient === 'horizontal') {
                     if (zrWidth - lastX < 200   // 最后200px做分行预判
-                        && (itemWidth + 5
-                            + zrArea.getTextWidth(
-                                itemName, 
-                                dataFont
-                            )
+                        && (itemWidth + 5 + zrArea.getTextWidth(formattedName, dataFont)
                             // 分行的最后一个不用算itemGap
-                            + (i == dataLength - 1 || data[i+1] === ''
-                               ? 0 : itemGap))
-                            >= zrWidth - lastX
+                            + (i === dataLength - 1 || data[i + 1] === '' ? 0 : itemGap)
+                           ) >= zrWidth - lastX
                     ) {
-                        lastX = _itemGroupLocation.x;
+                        lastX = this._itemGroupLocation.x;
                         lastY += itemHeight + itemGap;
                     }
                 }
@@ -128,69 +168,73 @@ define(function (require) {
                     if (zrHeight - lastY < 200   // 最后200px做分行预判
                         && (itemHeight
                             // 分行的最后一个不用算itemGap
-                            + (i == dataLength - 1 || data[i+1] === ''
-                               ? 0 : itemGap))
-                            >= zrHeight - lastY
+                            + (i === dataLength - 1 || data[i + 1] === '' ? 0 : itemGap)
+                           ) 
+                           >= zrHeight - lastY
                     ) {
-                        legendOption.x == 'right'
-                        ? lastX -= _itemGroupLocation.maxWidth + itemGap
-                        : lastX += _itemGroupLocation.maxWidth + itemGap;
-                        lastY = _itemGroupLocation.y;
+                        this.legendOption.x === 'right'
+                        ? lastX -= this._itemGroupLocation.maxWidth + itemGap
+                        : lastX += this._itemGroupLocation.maxWidth + itemGap;
+                        lastY = this._itemGroupLocation.y;
                     }
                 }
 
                 // 图形
-                itemShape = _getItemShapeByType(
+                itemShape = this._getItemShapeByType(
                     lastX, lastY,
                     itemWidth, itemHeight,
-                    (_selectedMap[itemName] ? color : '#ccc'),
+                    (this._selectedMap[itemName] && this._hasDataMap[itemName] ? color : '#ccc'),
                     itemType,
                     color
                 );
                 itemShape._name = itemName;
-                if (legendOption.selectedMode) {
-                    itemShape.onclick = _legendSelected;
-                }
-                self.shapeList.push(itemShape);
+                itemShape = new IconShape(itemShape);
 
                 // 文字
                 textShape = {
-                    shape : 'text',
-                    zlevel : _zlevelBase,
-                    style : {
-                        x : lastX + itemWidth + 5,
-                        y : lastY,
-                        color : _selectedMap[itemName]
+                    // shape: 'text',
+                    zlevel: this.getZlevelBase(),
+                    z: this.getZBase(),
+                    style: {
+                        x: lastX + itemWidth + 5,
+                        y: lastY + itemHeight / 2,
+                        color: this._selectedMap[itemName]
                                 ? (dataTextStyle.color === 'auto' ? color : dataTextStyle.color)
                                 : '#ccc',
-                        text: itemName,
+                        text: formattedName,
                         textFont: dataFont,
-                        textBaseline: 'top'
+                        textBaseline: 'middle'
                     },
-                    highlightStyle : {
-                        color : color,
+                    highlightStyle: {
+                        color: color,
                         brushType: 'fill'
                     },
-                    hoverable : !!legendOption.selectedMode,
-                    clickable : !!legendOption.selectedMode
+                    hoverable: !!this.legendOption.selectedMode,
+                    clickable: !!this.legendOption.selectedMode
                 };
 
-                if (legendOption.orient == 'vertical'
-                    && legendOption.x == 'right'
+                if (this.legendOption.orient === 'vertical'
+                    && this.legendOption.x === 'right'
                 ) {
                     textShape.style.x -= (itemWidth + 10);
                     textShape.style.textAlign = 'right';
                 }
 
                 textShape._name = itemName;
-                if (legendOption.selectedMode) {
-                    textShape.onclick = _legendSelected;
+                textShape = new TextShape(textShape);
+                
+                if (this.legendOption.selectedMode) {
+                    itemShape.onclick = textShape.onclick = this._legendSelected;
+                    itemShape.onmouseover =  textShape.onmouseover = this._dispatchHoverLink;
+                    itemShape.hoverConnect = textShape.id;
+                    textShape.hoverConnect = itemShape.id;
                 }
-                self.shapeList.push(textShape);
+                this.shapeList.push(itemShape);
+                this.shapeList.push(textShape);
 
-                if (legendOption.orient == 'horizontal') {
+                if (this.legendOption.orient === 'horizontal') {
                     lastX += itemWidth + 5
-                             + zrArea.getTextWidth(itemName, dataFont)
+                             + zrArea.getTextWidth(formattedName, dataFont)
                              + itemGap;
                 }
                 else {
@@ -198,44 +242,68 @@ define(function (require) {
                 }
             }
         
-            if (legendOption.orient == 'horizontal'
-                && legendOption.x == 'center'
-                && lastY != _itemGroupLocation.y
+            if (this.legendOption.orient === 'horizontal'
+                && this.legendOption.x === 'center'
+                && lastY != this._itemGroupLocation.y
             ) {
                 // 多行橫排居中优化
-                _mLineOptimize();
+                this._mLineOptimize();
             }
-        }
+        },
+        
+        _getName: function(data) {
+            return typeof data.name != 'undefined' ? data.name : data;
+        },
+
+        _getFormatterName: function(itemName) {
+            var formatter = this.legendOption.formatter;
+            var formattedName;
+            if (typeof formatter === 'function') {
+                formattedName = formatter.call(this.myChart, itemName);
+            }
+            else if (typeof formatter === 'string') {
+                formattedName = formatter.replace('{name}', itemName);
+            }
+            else {
+                formattedName = itemName;
+            }
+            return formattedName;
+        },
+
+        _getFormatterNameFromData: function(data) {
+            var itemName = this._getName(data);
+            return this._getFormatterName(itemName);
+        },
         
         // 多行橫排居中优化
-        function _mLineOptimize() {
+        _mLineOptimize: function () {
             var lineOffsetArray = []; // 每行宽度
-            var lastX = _itemGroupLocation.x;
-            for (var i = 2, l = self.shapeList.length; i < l; i++) {
-                if (self.shapeList[i].style.x == lastX) {
+            var lastX = this._itemGroupLocation.x;
+            for (var i = 2, l = this.shapeList.length; i < l; i++) {
+                if (this.shapeList[i].style.x === lastX) {
                     lineOffsetArray.push(
                         (
-                            _itemGroupLocation.width 
+                            this._itemGroupLocation.width 
                             - (
-                                self.shapeList[i - 1].style.x
+                                this.shapeList[i - 1].style.x
                                 + zrArea.getTextWidth(
-                                      self.shapeList[i - 1].style.text,
-                                      self.shapeList[i - 1].style.textFont
+                                      this.shapeList[i - 1].style.text,
+                                      this.shapeList[i - 1].style.textFont
                                   )
                                 - lastX
                             )
                         ) / 2
                     );
                 }
-                else if (i == l - 1) {
+                else if (i === l - 1) {
                     lineOffsetArray.push(
                         (
-                            _itemGroupLocation.width 
+                            this._itemGroupLocation.width 
                             - (
-                                self.shapeList[i].style.x
+                                this.shapeList[i].style.x
                                 + zrArea.getTextWidth(
-                                      self.shapeList[i].style.text,
-                                      self.shapeList[i].style.textFont
+                                      this.shapeList[i].style.text,
+                                      this.shapeList[i].style.textFont
                                   )
                                 - lastX
                             )
@@ -244,105 +312,89 @@ define(function (require) {
                 }
             }
             var curLineIndex = -1;
-            for (var i = 1, l = self.shapeList.length; i < l; i++) {
-                if (self.shapeList[i].style.x == lastX) {
+            for (var i = 1, l = this.shapeList.length; i < l; i++) {
+                if (this.shapeList[i].style.x === lastX) {
                     curLineIndex++;
                 }
                 if (lineOffsetArray[curLineIndex] === 0) {
                     continue;
                 }
                 else {
-                    self.shapeList[i].style.x += 
-                        lineOffsetArray[curLineIndex];
+                    this.shapeList[i].style.x += lineOffsetArray[curLineIndex];
                 }
             }
-        }
+        },
 
-        function _buildBackground() {
-            var pTop = legendOption.padding[0];
-            var pRight = legendOption.padding[1];
-            var pBottom = legendOption.padding[2];
-            var pLeft = legendOption.padding[3];
+        _buildBackground: function () {
+            var padding = this.reformCssArray(this.legendOption.padding);
 
-            self.shapeList.push({
-                shape : 'rectangle',
-                zlevel : _zlevelBase,
+            this.shapeList.push(new RectangleShape({
+                zlevel: this.getZlevelBase(),
+                z: this.getZBase(),
                 hoverable :false,
-                style : {
-                    x : _itemGroupLocation.x - pLeft,
-                    y : _itemGroupLocation.y - pTop,
-                    width : _itemGroupLocation.width + pLeft + pRight,
-                    height : _itemGroupLocation.height + pTop + pBottom,
-                    brushType : legendOption.borderWidth === 0
-                                ? 'fill' : 'both',
-                    color : legendOption.backgroundColor,
-                    strokeColor : legendOption.borderColor,
-                    lineWidth : legendOption.borderWidth
+                style: {
+                    x: this._itemGroupLocation.x - padding[3],
+                    y: this._itemGroupLocation.y - padding[0],
+                    width: this._itemGroupLocation.width + padding[3] + padding[1],
+                    height: this._itemGroupLocation.height + padding[0] + padding[2],
+                    brushType: this.legendOption.borderWidth === 0 ? 'fill' : 'both',
+                    color: this.legendOption.backgroundColor,
+                    strokeColor: this.legendOption.borderColor,
+                    lineWidth: this.legendOption.borderWidth
                 }
-            });
-        }
+            }));
+        },
 
         /**
          * 根据选项计算图例实体的位置坐标
          */
-        function _getItemGroupLocation() {
-            var data = legendOption.data;
+        _getItemGroupLocation: function () {
+            var data = this.legendOption.data;
             var dataLength = data.length;
-            var itemGap = legendOption.itemGap;
-            var itemWidth = legendOption.itemWidth + 5; // 5px是图形和文字的间隔，不可配
-            var itemHeight = legendOption.itemHeight;
-            var textStyle  = legendOption.textStyle;
-            var font = self.getFont(textStyle);
+            var itemGap = this.legendOption.itemGap;
+            var itemWidth = this.legendOption.itemWidth + 5; // 5px是图形和文字的间隔，不可配
+            var itemHeight = this.legendOption.itemHeight;
+            var textStyle  = this.legendOption.textStyle;
+            var font = this.getFont(textStyle);
             var totalWidth = 0;
             var totalHeight = 0;
-            var padding = legendOption.padding;
-            var zrWidth = zr.getWidth() - padding[1] - padding[3];
-            var zrHeight = zr.getHeight() - padding[0] - padding[2];
+            var padding = this.reformCssArray(this.legendOption.padding);
+            var zrWidth = this.zr.getWidth() - padding[1] - padding[3];
+            var zrHeight = this.zr.getHeight() - padding[0] - padding[2];
             
             var temp = 0; // 宽高计算，用于多行判断
             var maxWidth = 0; // 垂直布局有用
-            if (legendOption.orient == 'horizontal') {
+            if (this.legendOption.orient === 'horizontal') {
                 // 水平布局，计算总宽度
                 totalHeight = itemHeight;
                 for (var i = 0; i < dataLength; i++) {
-                    if (data[i] === '') {
+                    if (this._getName(data[i]) === '') {
                         temp -= itemGap;
-                        if (temp > zrWidth) {
-                            totalWidth = zrWidth;
-                            totalHeight += itemHeight + itemGap;
-                        }
-                        else {
-                            totalWidth = Math.max(totalWidth, temp);
-                        }
+                        totalWidth = Math.max(totalWidth, temp);
                         totalHeight += itemHeight + itemGap;
                         temp = 0;
                         continue;
                     }
-                    dataTextStyle = zrUtil.merge(
-                        data[i].textStyle || {},
-                        textStyle,
-                        {'overwrite': false}
+                    var tempTextWidth = zrArea.getTextWidth(
+                        this._getFormatterNameFromData(data[i]),
+                        data[i].textStyle 
+                        ? this.getFont(zrUtil.merge(
+                            data[i].textStyle || {},
+                            textStyle
+                          ))
+                        : font
                     );
-                    temp += itemWidth
-                            + zrArea.getTextWidth(
-                                  data[i].name || data[i],
-                                  data[i].textStyle 
-                                  ? self.getFont(zrUtil.merge(
-                                        data[i].textStyle || {},
-                                        textStyle,
-                                        {'overwrite': false}
-                                    ))
-                                  : font
-                              )
-                            + itemGap;
-                }
-                totalHeight = Math.max(totalHeight, itemHeight);
-                temp -= itemGap;    // 减去最后一个的itemGap
-                if (temp > zrWidth) {
-                    totalWidth = zrWidth;
-                    totalHeight += itemHeight + itemGap;
-                } else {
-                    totalWidth = Math.max(totalWidth, temp);
+                    if (temp + itemWidth + tempTextWidth + itemGap > zrWidth) {
+                        // new line
+                        temp -= itemGap;  // 减去最后一个的itemGap
+                        totalWidth = Math.max(totalWidth, temp);
+                        totalHeight += itemHeight + itemGap;
+                        temp = 0;
+                    }
+                    else {
+                        temp += itemWidth + tempTextWidth + itemGap;
+                        totalWidth = Math.max(totalWidth, temp - itemGap);
+                    }
                 }
             }
             else {
@@ -351,12 +403,11 @@ define(function (require) {
                     maxWidth = Math.max(
                         maxWidth,
                         zrArea.getTextWidth(
-                            data[i].name || data[i],
+                            this._getFormatterNameFromData(data[i]),
                             data[i].textStyle 
-                            ? self.getFont(zrUtil.merge(
+                            ? this.getFont(zrUtil.merge(
                                   data[i].textStyle || {},
-                                  textStyle,
-                                  {'overwrite': false}
+                                  textStyle
                               ))
                             : font
                         )
@@ -365,491 +416,498 @@ define(function (require) {
                 maxWidth += itemWidth;
                 totalWidth = maxWidth;
                 for (var i = 0; i < dataLength; i++) {
-                    if (data[i] === '') {
-                        temp -= itemGap;
-                        if (temp > zrHeight) {
-                            totalHeight = zrHeight;
-                            totalWidth += maxWidth + itemGap;
-                        }
-                        else {
-                            totalHeight = Math.max(totalHeight, temp);
-                        }
+                    if (this._getName(data[i]) === '') {
                         totalWidth += maxWidth + itemGap;
+                        temp -= itemGap;  // 减去最后一个的itemGap
+                        totalHeight = Math.max(totalHeight, temp);
                         temp = 0;
                         continue;
                     }
-                    temp += itemHeight + itemGap;
-                }
-                totalWidth = Math.max(totalWidth, maxWidth);
-                temp -= itemGap;    // 减去最后一个的itemGap
-                if (temp > zrHeight) {
-                    totalHeight = zrHeight;
-                    totalWidth += maxWidth + itemGap;
-                } else {
-                    totalHeight = Math.max(totalHeight, temp);
+                    if (temp + itemHeight + itemGap > zrHeight) {
+                        // new line
+                        totalWidth += maxWidth + itemGap;
+                        temp -= itemGap;  // 减去最后一个的itemGap
+                        totalHeight = Math.max(totalHeight, temp);
+                        temp = 0;
+                    }
+                    else {
+                        temp += itemHeight + itemGap;
+                        totalHeight = Math.max(totalHeight, temp - itemGap);
+                    }
                 }
             }
 
-            zrWidth = zr.getWidth();
-            zrHeight = zr.getHeight();
+            zrWidth = this.zr.getWidth();
+            zrHeight = this.zr.getHeight();
             var x;
-            switch (legendOption.x) {
+            switch (this.legendOption.x) {
                 case 'center' :
                     x = Math.floor((zrWidth - totalWidth) / 2);
                     break;
                 case 'left' :
-                    x = legendOption.padding[3] + legendOption.borderWidth;
+                    x = padding[3] + this.legendOption.borderWidth;
                     break;
                 case 'right' :
                     x = zrWidth
                         - totalWidth
-                        - legendOption.padding[1]
-                        - legendOption.padding[3]
-                        - legendOption.borderWidth * 2;
+                        - padding[1]
+                        - padding[3]
+                        - this.legendOption.borderWidth * 2;
                     break;
                 default :
-                    x = legendOption.x - 0;
-                    x = isNaN(x) ? 0 : x;
+                    x = this.parsePercent(this.legendOption.x, zrWidth);
                     break;
             }
-
+            
             var y;
-            switch (legendOption.y) {
+            switch (this.legendOption.y) {
                 case 'top' :
-                    y = legendOption.padding[0] + legendOption.borderWidth;
+                    y = padding[0] + this.legendOption.borderWidth;
                     break;
                 case 'bottom' :
                     y = zrHeight
                         - totalHeight
-                        - legendOption.padding[0]
-                        - legendOption.padding[2]
-                        - legendOption.borderWidth * 2;
+                        - padding[0]
+                        - padding[2]
+                        - this.legendOption.borderWidth * 2;
                     break;
                 case 'center' :
                     y = Math.floor((zrHeight - totalHeight) / 2);
                     break;
                 default :
-                    y = legendOption.y - 0;
-                    y = isNaN(y) ? 0 : y;
+                    y = this.parsePercent(this.legendOption.y, zrHeight);
                     break;
             }
 
             return {
-                x : x,
-                y : y,
-                width : totalWidth,
-                height : totalHeight,
-                maxWidth : maxWidth
+                x: x,
+                y: y,
+                width: totalWidth,
+                height: totalHeight,
+                maxWidth: maxWidth
             };
-        }
+        },
 
         /**
          * 根据名称返回series数据或data
          */
-        function _getSomethingByName(name) {
-            var series = option.series;
+        _getSomethingByName: function (name) {
+            var series = this.option.series;
             var data;
             for (var i = 0, l = series.length; i < l; i++) {
-                if (series[i].name == name) {
+                if (series[i].name === name) {
                     // 系列名称优先
                     return {
-                        type : series[i].type,
-                        series : series[i],
-                        seriesIndex : i,
-                        data : null,
-                        dataIndex : -1
+                        type: series[i].type,
+                        series: series[i],
+                        seriesIndex: i,
+                        data: null,
+                        dataIndex: -1
                     };
                 }
 
                 if (
-                    series[i].type == ecConfig.CHART_TYPE_PIE 
-                    || series[i].type == ecConfig.CHART_TYPE_RADAR
-                    || series[i].type == ecConfig.CHART_TYPE_CHORD
-                    || series[i].type == ecConfig.CHART_TYPE_FORCE
+                    series[i].type === ecConfig.CHART_TYPE_PIE 
+                    || series[i].type === ecConfig.CHART_TYPE_RADAR
+                    || series[i].type === ecConfig.CHART_TYPE_CHORD
+                    || series[i].type === ecConfig.CHART_TYPE_FORCE
+                    || series[i].type === ecConfig.CHART_TYPE_FUNNEL
+                    || series[i].type === ecConfig.CHART_TYPE_TREEMAP
                 ) {
-                    data = series[i].type != ecConfig.CHART_TYPE_FORCE
-                           ? series[i].data         // 饼图、雷达图、和弦图得查找里面的数据名字
-                           : series[i].categories;  // 力导布局查找categories配置
+                    data = series[i].categories || series[i].data || series[i].nodes;
+
                     for (var j = 0, k = data.length; j < k; j++) {
-                        if (data[j].name == name) {
+                        if (data[j].name === name) {
                             return {
-                                type : series[i].type,
-                                series : series[i],
-                                seriesIndex : i,
-                                data : data[j],
-                                dataIndex : j
+                                type: series[i].type,
+                                series: series[i],
+                                seriesIndex: i,
+                                data: data[j],
+                                dataIndex: j
                             };
                         }
                     }
                 }
             }
             return {
-                type : 'bar',
-                series : null,
-                seriesIndex : -1,
-                data : null,
-                dataIndex : -1
+                type: 'bar',
+                series: null,
+                seriesIndex: -1,
+                data: null,
+                dataIndex: -1
             };
-        }
+        },
         
-        function _getItemShapeByType(x, y, width, height, color, itemType, defaultColor) {
-            var highlightColor = color === '#ccc' 
-                                 ? defaultColor 
-                                 : typeof color == 'string' && color != '#ccc' 
-                                   ? zrColor.lift(color, -0.3) : color;
+        _getItemShapeByType: function (x, y, width, height, color, itemType, defaultColor) {
+            var highlightColor = color === '#ccc' ? defaultColor : color;
             var itemShape = {
-                shape : 'icon',
-                zlevel : _zlevelBase,
-                style : {
-                    iconType : 'legendicon' 
-                               + (itemType != ecConfig.CHART_TYPE_CHORD   // 和弦复用饼图
-                                  ? itemType : ecConfig.CHART_TYPE_PIE),
-                    x : x,
-                    y : y,
-                    width : width,
-                    height : height,
-                    color : color,
-                    strokeColor : color,
-                    lineWidth : 2
+                zlevel: this.getZlevelBase(),
+                z: this.getZBase(),
+                style: {
+                    iconType: 'legendicon' + itemType,
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    color: color,
+                    strokeColor: color,
+                    lineWidth: 2
                 },
                 highlightStyle: {
-                    color : highlightColor,
-                    strokeColor : highlightColor,
-                    lineWidth : 1
+                    color: highlightColor,
+                    strokeColor: highlightColor,
+                    lineWidth: 1
                 },
-                hoverable : legendOption.selectedMode,
-                clickable : legendOption.selectedMode
+                hoverable: this.legendOption.selectedMode,
+                clickable: this.legendOption.selectedMode
             };
+            
+            var imageLocation;
+            if (itemType.match('image')) {
+                var imageLocation = itemType.replace(
+                    new RegExp('^image:\\/\\/'), ''
+                );
+                itemType = 'image';
+            }
             // 特殊设置
             switch (itemType) {
-                case 'line' :
+                case 'line':
                     itemShape.style.brushType = 'stroke';
                     itemShape.highlightStyle.lineWidth = 3;
                     break;
-                case 'radar' :
-                case 'scatter' :   
+                case 'radar':
+                case 'venn':
+                case 'tree':
+                case 'treemap':
+                case 'scatter':
                     itemShape.highlightStyle.lineWidth = 3;
                     break;
-                case 'k' :
+                case 'k':
                     itemShape.style.brushType = 'both';
                     itemShape.highlightStyle.lineWidth = 3;
                     itemShape.highlightStyle.color =
-                    itemShape.style.color = self.query(
-                        ecConfig, 'k.itemStyle.normal.color'
+                    itemShape.style.color = this.deepQuery(
+                        [this.ecTheme, ecConfig], 'k.itemStyle.normal.color'
                     ) || '#fff';
                     itemShape.style.strokeColor = color != '#ccc' 
-                        ? self.query(
-                              ecConfig, 'k.itemStyle.normal.lineStyle.color'
-                          ) || '#ff3200'
+                        ? (
+                            this.deepQuery(
+                                [this.ecTheme, ecConfig], 'k.itemStyle.normal.lineStyle.color'
+                            ) || '#ff3200'
+                        )
                         : color;
+                    break;
+                case 'image':
+                    itemShape.style.iconType = 'image';
+                    itemShape.style.image = imageLocation;
+                    if (color === '#ccc') {
+                        itemShape.style.opacity = 0.5;
+                    }
+                    break;
             }
             return itemShape;
-        }
+        },
 
-        function _legendSelected(param) {
+        __legendSelected: function (param) {
             var itemName = param.target._name;
-            if (legendOption.selectedMode === 'single') {
-                for (var k in _selectedMap) {
-                    _selectedMap[k] = false;
+            if (this.legendOption.selectedMode === 'single') {
+                for (var k in this._selectedMap) {
+                    this._selectedMap[k] = false;
                 }
             }
-            _selectedMap[itemName] = !_selectedMap[itemName];
-            messageCenter.dispatch(
+            this._selectedMap[itemName] = !this._selectedMap[itemName];
+            this.messageCenter.dispatch(
                 ecConfig.EVENT.LEGEND_SELECTED,
                 param.event,
                 {
-                    selected : _selectedMap,
-                    target : itemName
-                }
+                    selected: this._selectedMap,
+                    target: itemName
+                },
+                this.myChart
             );
-        }
-
-        function init(newOption) {
-            if (!self.query(newOption, 'legend.data')) {
-                return;
-            }
-
-            option = newOption;
-
-            option.legend = self.reformOption(option.legend);
-            // 补全padding属性
-            option.legend.padding = self.reformCssArray(
-                option.legend.padding
+        },
+        
+        /**
+         * 产生hover link事件 
+         */
+        __dispatchHoverLink : function(param) {
+            this.messageCenter.dispatch(
+                ecConfig.EVENT.LEGEND_HOVERLINK,
+                param.event,
+                {
+                    target: param.target._name
+                },
+                this.myChart
             );
-
-            legendOption = option.legend;
-
-            self.clear();
-
-            _selectedMap = {};
-
-            var data = legendOption.data || [];
-            var itemName;
-            var something;
-            var color;
-            var queryTarget;
-            for (var i = 0, dataLength = data.length; i < dataLength; i++) {
-                itemName = data[i].name || data[i];
-                if (itemName === '') {
-                    continue;
-                }
-                something = _getSomethingByName(itemName);
-                if (!something.series) {
-                    _selectedMap[itemName] = false;
-                } 
-                else {
-                    if (something.data
-                        && (something.type == ecConfig.CHART_TYPE_PIE
-                            || something.type == ecConfig.CHART_TYPE_FORCE)
-                        
-                    ) {
-                        queryTarget = [something.data, something.series];
-                    }
-                    else {
-                        queryTarget = [something.series];
-                    }
-                    
-                    color = self.getItemStyleColor(
-                        self.deepQuery(
-                            queryTarget, 'itemStyle.normal.color'
-                        ),
-                        something.seriesIndex,
-                        something.dataIndex,
-                        something.data
-                    );
-                    if (color && something.type != ecConfig.CHART_TYPE_K) {
-                        setColor(itemName, color);
-                    }
-                    _selectedMap[itemName] = true;
-                }
-            }
-            if (selected) {
-                for (var k in selected) {
-                    _selectedMap[k] = selected[k];
-                }
-            }
-            _buildShape();
-        }
-
+            return;
+        },
+        
         /**
          * 刷新
          */
-        function refresh(newOption) {
+        refresh: function (newOption) {
             if (newOption) {
-                option = newOption;
-                option.legend = self.reformOption(option.legend);
-                // 补全padding属性
-                option.legend.padding = self.reformCssArray(
-                    option.legend.padding
-                );
-                if (option.legend.selected) {
-                    for (var k in option.legend.selected) {
-                        _selectedMap[k] = option.legend.selected[k];
+                this.option = newOption || this.option;
+                this.option.legend = this.reformOption(this.option.legend);
+                this.legendOption = this.option.legend;
+                
+                var data = this.legendOption.data || [];
+                var itemName;
+                var something;
+                var color;
+                var queryTarget;
+                if (this.legendOption.selected) {
+                    for (var k in this.legendOption.selected) {
+                        this._selectedMap[k] = typeof this._selectedMap[k] != 'undefined'
+                                               ? this._selectedMap[k]
+                                               : this.legendOption.selected[k];
+                    }
+                }
+                for (var i = 0, dataLength = data.length; i < dataLength; i++) {
+                    itemName = this._getName(data[i]);
+                    if (itemName === '') {
+                        continue;
+                    }
+                    something = this._getSomethingByName(itemName);
+                    if (!something.series) {
+                        this._hasDataMap[itemName] = false;
+                    } 
+                    else {
+                        this._hasDataMap[itemName] = true;
+                        if (something.data
+                            && (something.type === ecConfig.CHART_TYPE_PIE
+                                || something.type === ecConfig.CHART_TYPE_FORCE
+                                || something.type === ecConfig.CHART_TYPE_FUNNEL)
+                        ) {
+                            queryTarget = [something.data, something.series];
+                        }
+                        else {
+                            queryTarget = [something.series];
+                        }
+                        
+                        color = this.getItemStyleColor(
+                            this.deepQuery(queryTarget, 'itemStyle.normal.color'),
+                            something.seriesIndex,
+                            something.dataIndex,
+                            something.data
+                        );
+                        if (color && something.type != ecConfig.CHART_TYPE_K) {
+                            this.setColor(itemName, color);
+                        }
+                        this._selectedMap[itemName] = 
+                            this._selectedMap[itemName] != null
+                            ? this._selectedMap[itemName] : true; 
                     }
                 }
             }
-            legendOption = option.legend;
-            self.clear();
-            _buildShape();
-        }
-
-        function setColor(legendName, color) {
-            _colorMap[legendName] = color;
-        }
-
-        function getColor(legendName) {
-            if (!_colorMap[legendName]) {
-                _colorMap[legendName] = zr.getColor(_colorIndex++);
-            }
-            return _colorMap[legendName];
-        }
+            this.clear();
+            this._buildShape();
+        },
         
-        function hasColor(legendName) {
-            return _colorMap[legendName] ? _colorMap[legendName] : false;
-        }
-
-        function add(name, color){
-            legendOption.data.push(name);
-            setColor(name,color);
-            _selectedMap[name] = true;
-        }
-
-        function del(name){
-            var data = legendOption.data;
-            var finalData = [];
-            var found = false;
-            for (var i = 0, dataLength = data.length; i < dataLength; i++) {
-                if (found || data[i] != name) {
-                    finalData.push(data[i]);
+        getRelatedAmount: function(name) {
+            var amount = 0;
+            var series = this.option.series;
+            var data;
+            for (var i = 0, l = series.length; i < l; i++) {
+                if (series[i].name === name) {
+                    // 系列名称优先
+                    amount++;
                 }
-                else {
-                    found = true;
-                    continue;
+
+                if (
+                    series[i].type === ecConfig.CHART_TYPE_PIE 
+                    || series[i].type === ecConfig.CHART_TYPE_RADAR
+                    || series[i].type === ecConfig.CHART_TYPE_CHORD
+                    || series[i].type === ecConfig.CHART_TYPE_FORCE
+                    || series[i].type === ecConfig.CHART_TYPE_FUNNEL
+                ) {
+                    data = series[i].type != ecConfig.CHART_TYPE_FORCE
+                           ? series[i].data         // 饼图、雷达图、和弦图得查找里面的数据名字
+                           : series[i].categories;  // 力导布局查找categories配置
+                    for (var j = 0, k = data.length; j < k; j++) {
+                        if (data[j].name === name && data[j].value != '-') {
+                            amount++;
+                        }
+                    }
                 }
             }
-            legendOption.data = finalData;
-        }
+            return amount;
+        },
+
+        setColor: function (legendName, color) {
+            this._colorMap[legendName] = color;
+        },
+
+        getColor: function (legendName) {
+            if (!this._colorMap[legendName]) {
+                this._colorMap[legendName] = this.zr.getColor(this._colorIndex++);
+            }
+            return this._colorMap[legendName];
+        },
+        
+        hasColor: function (legendName) {
+            return this._colorMap[legendName] ? this._colorMap[legendName] : false;
+        },
+
+        add: function (name, color){
+            var data = this.legendOption.data;
+            for (var i = 0, dataLength = data.length; i < dataLength; i++) {
+                if (this._getName(data[i]) === name) {
+                    // 已有就不重复加了
+                    return;
+                }
+            }
+            this.legendOption.data.push(name);
+            this.setColor(name,color);
+            this._selectedMap[name] = true;
+            this._hasDataMap[name] = true;
+        },
+
+        del: function (name){
+            var data = this.legendOption.data;
+            for (var i = 0, dataLength = data.length; i < dataLength; i++) {
+                if (this._getName(data[i]) === name) {
+                    return this.legendOption.data.splice(i, 1);
+                }
+            }
+        },
         
         /**
          * 特殊图形元素回调设置
          * @param {Object} name
          * @param {Object} itemShape
          */
-        function getItemShape(name) {
-            if (typeof name == 'undefined') {
+        getItemShape: function (name) {
+            if (name == null) {
                 return;
             }
             var shape;
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                shape = self.shapeList[i];
-                if (shape._name == name && shape.shape != 'text') {
+            for (var i = 0, l = this.shapeList.length; i < l; i++) {
+                shape = this.shapeList[i];
+                if (shape._name === name && shape.type != 'text') {
                     return shape;
                 }
             }
-        }
+        },
         
         /**
          * 特殊图形元素回调设置
          * @param {Object} name
          * @param {Object} itemShape
          */
-        function setItemShape(name, itemShape) {
+        setItemShape: function (name, itemShape) {
             var shape;
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                shape = self.shapeList[i];
-                if (shape._name == name && shape.shape != 'text') {
-                    if (!_selectedMap[name]) {
+            for (var i = 0, l = this.shapeList.length; i < l; i++) {
+                shape = this.shapeList[i];
+                if (shape._name === name && shape.type != 'text') {
+                    if (!this._selectedMap[name]) {
                         itemShape.style.color = '#ccc';
                         itemShape.style.strokeColor = '#ccc';
                     }
-                    zr.modShape(shape.id, itemShape);
+                    this.zr.modShape(shape.id, itemShape);
                 }
             }
-        }
+        },
 
-        function isSelected(itemName) {
-            if (typeof _selectedMap[itemName] != 'undefined') {
-                return _selectedMap[itemName];
+        isSelected: function (itemName) {
+            if (typeof this._selectedMap[itemName] != 'undefined') {
+                return this._selectedMap[itemName];
             }
             else {
                 // 没在legend里定义的都为true啊~
                 return true;
             }
-        }
+        },
         
-        function getSelectedMap() {
-            return _selectedMap;
-        }
+        getSelectedMap: function () {
+            return this._selectedMap;
+        },
+        
+        setSelected: function(itemName, selectStatus) {
+            if (this.legendOption.selectedMode === 'single') {
+                for (var k in this._selectedMap) {
+                    this._selectedMap[k] = false;
+                }
+            }
+            this._selectedMap[itemName] = selectStatus;
+            this.messageCenter.dispatch(
+                ecConfig.EVENT.LEGEND_SELECTED,
+                null,
+                {
+                    selected: this._selectedMap,
+                    target: itemName
+                },
+                this.myChart
+            );
+        },
         
         /**
          * 图例选择
          */
-        function onlegendSelected(param, status) {
+        onlegendSelected: function (param, status) {
             var legendSelected = param.selected;
-            for (var itemName in _selectedMap) {
-                if (_selectedMap[itemName] != legendSelected[itemName]) {
+            for (var itemName in legendSelected) {
+                if (this._selectedMap[itemName] != legendSelected[itemName]) {
                     // 有一项不一致都需要重绘
                     status.needRefresh = true;
                 }
-                _selectedMap[itemName] = legendSelected[itemName];
+                this._selectedMap[itemName] = legendSelected[itemName];
             }
             return;
         }
-
-        self.init = init;
-        self.refresh = refresh;
-        self.setColor = setColor;
-        self.getColor = getColor;
-        self.hasColor = hasColor;
-        self.add = add;
-        self.del = del;
-        self.getItemShape = getItemShape;
-        self.setItemShape = setItemShape;
-        self.isSelected = isSelected;
-        self.getSelectedMap = getSelectedMap;
-        self.onlegendSelected = onlegendSelected;
-
-        init(option);
-    }
+    };
     
     var legendIcon = {
-        line : function (ctx, style) {
+        line: function (ctx, style) {
             var dy = style.height / 2;
             ctx.moveTo(style.x,     style.y + dy);
             ctx.lineTo(style.x + style.width,style.y + dy);
         },
-        pie : function (ctx, style) {
+        
+        pie: function (ctx, style) {
             var x = style.x;
             var y = style.y;
             var width = style.width;
             var height = style.height;
-            var sector = require('zrender/shape').get('sector');
-            sector.buildPath(ctx, {
-                x : x + width / 2,
-                y : y + height + 2,
-                r : height + 2,
-                r0 : 6,
-                startAngle : 45,
-                endAngle : 135
+            SectorShape.prototype.buildPath(ctx, {
+                x: x + width / 2,
+                y: y + height + 2,
+                r: height,
+                r0: 6,
+                startAngle: 45,
+                endAngle: 135
             });
         },
-        chord : function(ctx, style) {
+        
+        eventRiver: function (ctx, style) {
             var x = style.x;
             var y = style.y;
             var width = style.width;
             var height = style.height;
-            var beziercurve = require('zrender/shape').get('beziercurve');
             ctx.moveTo(x, y + height);
-            beziercurve.buildPath(ctx, {
-                xStart : x,
-                yStart : y + height,
-                cpX1 : x + width,
-                cpY1 : y + height,
-                cpX2 : x,
-                cpY2 : y + 4,
-                xEnd : x + width,
-                yEnd : y + 4
-            });
+            ctx.bezierCurveTo(
+                x + width, y + height, x, y + 4, x + width, y + 4
+            );
             ctx.lineTo(x + width, y);
-            beziercurve.buildPath(ctx, {
-                xStart : x + width,
-                yStart : y,
-                cpX1 : x,
-                cpY1 : y,
-                cpX2 : x + width,
-                cpY2 : y + height - 4,
-                xEnd : x,
-                yEnd : y + height - 4
-            });
+            ctx.bezierCurveTo(
+                x, y, x + width, y + height - 4, x, y + height - 4
+            );
             ctx.lineTo(x, y + height);
-            /*
-            var x = style.x + 2;
-            var y = style.y;
-            var width = style.width - 2;
-            var height = style.height;
-            var r = width / Math.sqrt(3);
-            ctx.moveTo(x, y);
-            ctx.quadraticCurveTo(x + width / 4 * 3, y, x + width, y + height);
-            ctx.arc(
-                x + width / 2, y + height + r / 2, 
-                r, -Math.PI / 6, -Math.PI / 6 * 5, true);
-            ctx.quadraticCurveTo(x - width / 2, y + height / 3, x, y);
-            */
         },
-        k : function (ctx, style) {
+        
+        k: function (ctx, style) {
             var x = style.x;
             var y = style.y;
             var width = style.width;
             var height = style.height;
-            var candle = require('zrender/shape').get('candle');
-            candle.buildPath(ctx, {
-                x : x + width / 2,
-                y : [y + 1, y + 1, y + height - 6, y + height],
-                width : width - 6
+            CandleShape.prototype.buildPath(ctx, {
+                x: x + width / 2,
+                y: [y + 1, y + 1, y + height - 6, y + height],
+                width: width - 6
             });
         },
-        bar : function (ctx, style) {
-            //ctx.rect(style.x, style.y + 1, style.width, style.height - 2);
+        
+        bar: function (ctx, style) {
             var x = style.x;
             var y = style.y +1;
             var width = style.width;
@@ -872,10 +930,12 @@ define(function (require) {
             ctx.lineTo(x, y + r);
             ctx.quadraticCurveTo(x, y, x + r, y);
         },
-        force : function(ctx, style) {
-            require('zrender/shape').get('icon').get('circle')(ctx, style);
+        
+        force: function (ctx, style) {
+            IconShape.prototype.iconLibrary.circle(ctx, style);
         },
-        radar: function(ctx, style) {
+        
+        radar: function (ctx, style) {
             var n = 6;
             var x = style.x + style.width / 2;
             var y = style.y + style.height / 2;
@@ -895,6 +955,14 @@ define(function (require) {
             ctx.lineTo(xStart, yStart);
         }
     };
+    legendIcon.chord = legendIcon.pie;
+    legendIcon.map = legendIcon.bar;
+    
+    for (var k in legendIcon) {
+        IconShape.prototype.iconLibrary['legendicon' + k] = legendIcon[k];
+    }
+    
+    zrUtil.inherits(Legend, Base);
     
     require('../component').define('legend', Legend);
     

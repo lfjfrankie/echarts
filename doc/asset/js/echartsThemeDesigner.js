@@ -6,24 +6,24 @@ var iconResize = document.getElementById('icon-resize');
 var needRefresh = false;
 
 function autoResize() {
-    if (iconResize.className == 'icon-resize-full') {
+    if ($(iconResize).hasClass('glyphicon-resize-full')) {
         focusCode();
-        iconResize.className = 'icon-resize-small';
+        iconResize.className = 'glyphicon glyphicon-resize-small';
     }
     else {
         focusGraphic();
-        iconResize.className = 'icon-resize-full';
+        iconResize.className = 'glyphicon glyphicon-resize-full';
     }
 }
 
 function focusCode() {
-    domCode.className = 'span8 ani';
-    domGraphic.className = 'span4 ani';
+    domCode.className = 'col-md-8 ani';
+    domGraphic.className = 'col-md-4 ani';
 }
 
 function focusGraphic() {
-    domCode.className = 'span4 ani';
-    domGraphic.className = 'span8 ani';
+    domCode.className = 'col-md-4 ani';
+    domGraphic.className = 'col-md-8 ani';
     if (needRefresh) {
         myChart[0].showLoading();
         myChart[1].showLoading();
@@ -62,58 +62,88 @@ function refreshAll() {
 
 var developMode = false;
 if (developMode) {
-    // for develop
-    require.config({
-        packages: [
-            {
-                name: 'echarts',
-                location: '../../src',
-                main: 'echarts'
-            },
-            {
-                name: 'zrender',
-                //location: 'http://ecomfe.github.io/zrender/src',
-                location: '../../../zrender/src',
-                main: 'zrender'
-            }
-        ]
-    });
+    window.esl = null;
+    window.define = null;
+    window.require = null;
+    (function () {
+        var script = document.createElement('script');
+        script.async = true;
+
+        var pathname = location.pathname;
+
+        var pathSegs = pathname.slice(pathname.indexOf('doc')).split('/');
+        var pathLevelArr = new Array(pathSegs.length - 1);
+        script.src = pathLevelArr.join('../') + 'asset/js/esl/esl.js';
+        if (script.readyState) {
+            script.onreadystatechange = fireLoad;
+        }
+        else {
+            script.onload = fireLoad;
+        }
+        (document.getElementsByTagName('head')[0] || document.body).appendChild(script);
+        
+        function fireLoad() {
+            script.onload = script.onreadystatechange = null;
+            setTimeout(loadedListener,100);
+        }
+        function loadedListener() {
+            // for develop
+            require.config({
+                packages: [
+                    {
+                        name: 'echarts',
+                        location: '../../src',
+                        main: 'echarts'
+                    },
+                    {
+                        name: 'zrender',
+                        //location: 'http://ecomfe.github.io/zrender/src',
+                        location: '../../../zrender/src',
+                        main: 'zrender'
+                    }
+                ]
+            });
+            launchExample();
+        }
+    })();
 }
 else {
     // for echarts online home page
-    var fileLocation = './www/js/echarts-map';
     require.config({
-        paths:{ 
-            echarts: fileLocation,
-            'echarts/chart/line': fileLocation,
-            'echarts/chart/bar': fileLocation,
-            'echarts/chart/scatter': fileLocation,
-            'echarts/chart/k': fileLocation,
-            'echarts/chart/pie': fileLocation,
-            'echarts/chart/radar': fileLocation,
-            'echarts/chart/map': fileLocation,
-            'echarts/chart/chord': fileLocation,
-            'echarts/chart/force': fileLocation
+        paths: {
+            echarts: './www/js'
         }
     });
+    launchExample();
 }
 
-// 按需加载
-require(
-    [
-        'echarts',
-        'echarts/chart/line',
-        'echarts/chart/bar',
-        'echarts/chart/scatter',
-        'echarts/chart/k',
-        'echarts/chart/pie',
-        'echarts/chart/radar',
-        'echarts/chart/force',
-        'echarts/chart/chord',
-        'echarts/chart/map'
-    ],
-    requireCallback
-);
+var isExampleLaunched;
+function launchExample() {
+    if (isExampleLaunched) {
+        return;
+    }
+
+    // 按需加载
+    isExampleLaunched = 1;
+    // 按需加载
+    require(
+        [
+            'echarts',
+            'echarts/chart/line',
+            'echarts/chart/bar',
+            'echarts/chart/scatter',
+            'echarts/chart/k',
+            'echarts/chart/pie',
+            'echarts/chart/radar',
+            'echarts/chart/force',
+            'echarts/chart/chord',
+            'echarts/chart/map',
+            'echarts/chart/gauge',
+            'echarts/chart/funnel'
+        ],
+        requireCallback
+    );
+}
 
 
 var echarts;
@@ -156,17 +186,17 @@ function requireCallback (ec) {
             }
         });
         */
-        var domGLeft = domG.offsetLeft;
-        var domGTop = domG.offsetTop;
+        var domGLeft = 0;// domG.offsetLeft;
+        var domGTop = 0;//domG.offsetTop;
+        var ImageShape = require('zrender/shape/Image');
         for (var i = 0, l = domMain.length; i < l; i++) {
-            _zr.addShape({
-                shape:'image',
+            _zr.addShape(new ImageShape({
                 style : {
-                    x : domMain[i].offsetLeft - domGLeft + (i < 6 ? 0: domGWidth),
-                    y : domMain[i].offsetTop - domGTop - (i < 6 ? 0: 1200),
+                    x : domMain[i].offsetParent.offsetLeft - domGLeft + (i < 6 ? 0: domGWidth),
+                    y : domMain[i].offsetParent.offsetTop - domGTop - (i < 6 ? 0: 1200),
                     image : myChart[i].getDataURL()
                 }
-            });
+            }));
         }
         _zr.render();
         
@@ -645,7 +675,7 @@ var option = {
                 ]
             }
         ],
-        animation: false
+        animation: true
     },
     4 : {
         title : {
@@ -815,7 +845,7 @@ var option = {
                 ]
             }
         ],
-        animation: false
+        animation: true
     },
     5 : {
         title : {
@@ -898,7 +928,7 @@ var option = {
                 })()
             }
         ],
-        animation: false
+        animation: true
     },
     6 : {
         title : {
@@ -970,7 +1000,7 @@ var option = {
                 ]
             }
         ],
-        animation: false
+        animation: true
     },
     7 : {
         title : {
@@ -999,7 +1029,7 @@ var option = {
                 ]
             }
         ],
-        animation: false
+        animation: true
     },
     8 : {
         title : {
@@ -1041,7 +1071,7 @@ var option = {
                 ]
             }
         ],
-        animation: false
+        animation: true
     },
     9 : {
         title : {
@@ -1161,7 +1191,7 @@ var option = {
                     links : links
                 }
             ],
-            animation: false
+            animation: true
         } 
     })()
 };

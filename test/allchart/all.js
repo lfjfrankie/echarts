@@ -52,7 +52,7 @@ for (var i = 0, l = domTextarea.length; i < l; i++) {
         { lineNumbers: true }
     );
     editor[i].setOption("theme", 'monokai');
-    editor[i].on('change', function(){needRefresh = true;});
+    editor[i].on('change', function (){needRefresh = true;});
 }
 
 function refresh(isBtnRefresh, idd){
@@ -67,7 +67,7 @@ function refresh(isBtnRefresh, idd){
         myChart[idx].dispose();
     }
     myChart[idx] = echarts.init(domMain[idx]);
-    (new Function(editor[idx].doc.getValue().replace(
+    (new Function (editor[idx].doc.getValue().replace(
         'option', 'option[' + idx + ']'))
     )()
     myChart[idx].setOption(option[idx], true);
@@ -76,7 +76,7 @@ function refresh(isBtnRefresh, idd){
 
 function refreshAll() {
     for (var i = 0, l = myChart.length; i < l; i++) {
-        (new Function(editor[i].doc.getValue().replace(
+        (new Function (editor[i].doc.getValue().replace(
             'option', 'option[' + i + ']'))
         )();
         myChart[i].setOption(option[i], true);
@@ -86,58 +86,87 @@ function refreshAll() {
 
 var developMode = false;
 if (developMode) {
-    // for develop
-    require.config({
-        packages: [
-            {
-                name: 'echarts',
-                location: '../../src',
-                main: 'echarts'
-            },
-            {
-                name: 'zrender',
-                //location: 'http://ecomfe.github.io/zrender/src',
-                location: '../../../zrender/src',
-                main: 'zrender'
-            }
-        ]
-    });
+    window.esl = null;
+    window.define = null;
+    window.require = null;
+    (function () {
+        var script = document.createElement('script');
+        script.async = true;
+
+        script.src = '../../doc/asset/js/esl/esl.js';
+        if (script.readyState) {
+            script.onreadystatechange = fireLoad;
+        }
+        else {
+            script.onload = fireLoad;
+        }
+        (document.getElementsByTagName('head')[0] || document.body).appendChild(script);
+        
+        function fireLoad() {
+            script.onload = script.onreadystatechange = null;
+            setTimeout(loadedListener,100);
+        }
+        function loadedListener() {
+            // for develop
+            require.config({
+                packages: [
+                    {
+                        name: 'echarts',
+                        location: '../../src',
+                        main: 'echarts'
+                    },
+                    {
+                        name: 'zrender',
+                        //location: 'http://ecomfe.github.io/zrender/src',
+                        location: '../../../zrender/src',
+                        main: 'zrender'
+                    }
+                ]
+            });
+            launchExample();
+        }
+    })();
 }
 else {
     // for echarts online home page
-    var fileLocation = '../../build/echarts-map';
     require.config({
         paths:{ 
-            echarts: fileLocation,
-            'echarts/chart/line': fileLocation,
-            'echarts/chart/bar': fileLocation,
-            'echarts/chart/scatter': fileLocation,
-            'echarts/chart/k': fileLocation,
-            'echarts/chart/pie': fileLocation,
-            'echarts/chart/radar': fileLocation,
-            'echarts/chart/map': fileLocation,
-            'echarts/chart/chord': fileLocation,
-            'echarts/chart/force': fileLocation
+            echarts: '../../build/dist'
         }
     });
+    launchExample();
 }
 
-// 按需加载
-require(
-    [
-        'echarts',
-        'echarts/chart/line',
-        'echarts/chart/bar',
-        'echarts/chart/scatter',
-        'echarts/chart/k',
-        'echarts/chart/pie',
-        'echarts/chart/radar',
-        'echarts/chart/force',
-        'echarts/chart/chord',
-        'echarts/chart/map'
-    ],
-    requireCallback
-);
+var isExampleLaunched;
+function launchExample() {
+    if (isExampleLaunched) {
+        return;
+    }
+
+    // 按需加载
+    isExampleLaunched = 1;
+    require(
+        [
+            'echarts',
+            'echarts/chart/line',
+            'echarts/chart/bar',
+            'echarts/chart/scatter',
+            'echarts/chart/k',
+            'echarts/chart/pie',
+            'echarts/chart/radar',
+            'echarts/chart/force',
+            'echarts/chart/chord',
+            'echarts/chart/map',
+            'echarts/chart/gauge',
+            'echarts/chart/funnel',
+            'echarts/chart/venn',
+            'echarts/chart/treemap',
+            'echarts/chart/tree',
+            'echarts/chart/eventRiver'
+        ],
+        requireCallback
+    );
+}
 
 var echarts;
 var option = {};
@@ -154,7 +183,7 @@ function requireCallback (ec) {
     }
     refreshAll();
     
-    window.onresize = function(){
+    window.onresize = function (){
         for (var i = 0, l = myChart.length; i < l; i++) {
             myChart[i].resize && myChart[i].resize();
         }

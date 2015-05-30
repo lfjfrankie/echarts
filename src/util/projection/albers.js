@@ -2,7 +2,7 @@
  * echarts地图投射算法
  *
  * @desc echarts基于Canvas，纯Javascript图表库，提供直观，生动，可交互，可个性化定制的数据统计图表。
- * @author Kener (@Kener-林峰, linzhifeng@baidu.com)
+ * @author Kener (@Kener-林峰, kener.linfeng@gmail.com)
  *
  */
 define(function() {
@@ -31,7 +31,7 @@ define(function() {
             ];
         }
 
-        albers.invert = function(coordinates) {
+        albers.invert = function (coordinates) {
             var x = (coordinates[0] - translate[0]) / scale;
             var y = (coordinates[1] - translate[1]) / scale;
             var p0y = p0 + y;
@@ -56,7 +56,7 @@ define(function() {
             return albers;
         }
 
-        albers.origin = function(x) {
+        albers.origin = function (x) {
             if (!arguments.length) {
                 return origin;
             }
@@ -64,7 +64,7 @@ define(function() {
             return reload();
         };
 
-        albers.parallels = function(x) {
+        albers.parallels = function (x) {
             if (!arguments.length) {
                 return parallels;
             }
@@ -72,7 +72,7 @@ define(function() {
             return reload();
         };
 
-        albers.scale = function(x) {
+        albers.scale = function (x) {
             if (!arguments.length) {
                 return scale;
             }
@@ -80,7 +80,7 @@ define(function() {
             return albers;
         };
 
-        albers.translate = function(x) {
+        albers.translate = function (x) {
             if (!arguments.length) {
                 return translate;
             }

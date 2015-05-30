@@ -2,106 +2,128 @@
  * echarts图表类：雷达图
  *
  * @desc echarts基于Canvas，纯Javascript图表库，提供直观，生动，可交互，可个性化定制的数据统计图表。
- * @author Neil (杨骥, yangji01@baidu.com)
- *
+ * @author Neil (杨骥, 511415343@qq.com)
  */
 
- define(function(require) {
+ define(function (require) {
+    var ChartBase = require('./base');
+    
+     // 图形依赖
+    var PolygonShape = require('zrender/shape/Polygon');
+     // 组件依赖
+    require('../component/polar');
+    
+    var ecConfig = require('../config');
+    // 雷达图默认参数
+    ecConfig.radar = {
+        zlevel: 0,                  // 一级层叠
+        z: 2,                       // 二级层叠
+        clickable: true,
+        legendHoverLink: true,
+        polarIndex: 0,
+        itemStyle: {
+            normal: {
+                // color: 各异,
+                label: {
+                    show: false
+                },
+                lineStyle: {
+                    width: 2,
+                    type: 'solid'
+                }
+            },
+            emphasis: {
+                // color: 各异,
+                label: {
+                    show: false
+                }
+            }
+        },
+        // symbol: null,            // 拐点图形类型
+        symbolSize: 2               // 可计算特性参数，空数据拖拽提示图形大小
+        // symbolRotate: null,      // 图形旋转控制
+    };
+
+    var ecData = require('../util/ecData');
+    var zrUtil = require('zrender/tool/util');
+    var zrColor = require('zrender/tool/color');
+    
     /**
      * 构造函数
      * @param {Object} messageCenter echart消息中心
      * @param {ZRender} zr zrender实例
      * @param {Object} series 数据
      * @param {Object} component 组件
+     * @constructor
+     * @exports Radar
      */
-    function Radar(ecConfig, messageCenter, zr, option, component) {
-        // 基类装饰
-        var ComponentBase = require('../component/base');
-        ComponentBase.call(this, ecConfig, zr);
-        // 可计算特性装饰
-        var CalculableBase = require('./calculableBase');
-        CalculableBase.call(this, zr, option);
+    function Radar(ecTheme, messageCenter, zr, option, myChart) {
+        // 图表基类
+        ChartBase.call(this, ecTheme, messageCenter, zr, option, myChart);
 
-        var ecData = require('../util/ecData');
-
-        var zrColor = require('zrender/tool/color');
-
-        var self = this;
-        self.type = ecConfig.CHART_TYPE_RADAR;
-
-        var series;                 // 共享数据源，不要修改跟自己无关的项
-        var serie;
-
-        var _zlevelBase = self.getZlevelBase();
-
-        var _queryTarget;
-
-        var _dropBoxList;
-
-        var _symbol = ecConfig.symbolList;
-        var _radarDataCounter;
-        
+        this.refresh(option);
+    }
+    
+    Radar.prototype = {
+        type : ecConfig.CHART_TYPE_RADAR,
         /**
          * 绘制图形
          */
-        function _buildShape() {
-            var legend = component.legend;
-            self.selectedMap = {};
-            _dropBoxList = [];
-            _radarDataCounter = 0;
+        _buildShape : function () {
+            this.selectedMap = {};
+            this._symbol = this.option.symbolList;
+            this._queryTarget;
+            this._dropBoxList = [];
+            this._radarDataCounter = 0;
+            
+            var series = this.series;
+            var legend = this.component.legend;
             var serieName;
-            for (var i = 0, l = series.length; i < l ; i ++) {
-                if (series[i].type == ecConfig.CHART_TYPE_RADAR) {
-                    serie = self.reformOption(series[i]);
-                    serieName = serie.name || '';
+            for (var i = 0, l = series.length; i < l ; i++) {
+                if (series[i].type === ecConfig.CHART_TYPE_RADAR) {
+                    this.serie = this.reformOption(series[i]);
+                    this.legendHoverLink = series[i].legendHoverLink || this.legendHoverLink;
+                    serieName = this.serie.name || '';
                     // 系列图例开关
-                    self.selectedMap[serieName] = 
+                    this.selectedMap[serieName] = 
                         legend ? legend.isSelected(serieName) : true;
                     
-                    if (self.selectedMap[serieName]) {
-                        _queryTarget = [serie, option];
+                    if (this.selectedMap[serieName]) {
+                        this._queryTarget = [this.serie, this.option];
     
                         // 添加可拖拽提示框，多系列共用一个极坐标，第一个优先
-                        if (self.deepQuery(_queryTarget, 'calculable')) {
-                            _addDropBox(i);
+                        if (this.deepQuery(this._queryTarget, 'calculable')) {
+                            this._addDropBox(i);
                         }
-                        _buildSingleRadar(i);
-                        self.buildMark(
-                            series[i],
-                            i,
-                            component
-                        );
+                        this._buildSingleRadar(i);
+                        this.buildMark(i);
                     }
                 }
             }
 
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                self.shapeList[i].id = zr.newShapeId(self.type);
-                zr.addShape(self.shapeList[i]);
-            }
-        }
+            this.addShapeList();
+        },
 
         /**
          * 构建数据图形
          * @param {number} 序列的index
          */
-        function _buildSingleRadar(index) {
-            var legend = component.legend;
+        _buildSingleRadar : function (index) {
+            var legend = this.component.legend;
             var iconShape;
-            var data = serie.data;
+            var data = this.serie.data;
             var defaultColor;
             var name;
             var pointList;
-            var calculable = self.deepQuery(_queryTarget, 'calculable');
+            var calculable = this.deepQuery(this._queryTarget, 'calculable');
            
-            for (var i = 0; i < data.length; i ++) {
+            for (var i = 0; i < data.length; i++) {
                 name = data[i].name || '';
                 
                 // 图例开关
-                self.selectedMap[name] = legend 
-                                         ? legend.isSelected(name) 
-                                         : true;
-                if (!self.selectedMap[name]) {
+                this.selectedMap[name] = legend 
+                    ? legend.isSelected(name) : true;
+                if (!this.selectedMap[name]) {
                     continue;
                 }
                 
@@ -112,29 +134,29 @@
                     iconShape = legend.getItemShape(name);
                     if (iconShape) {
                         // 回调legend，换一个更形象的icon
-                        iconShape.style.brushType = self.deepQuery(
-                            [data[i], serie], 'itemStyle.normal.areaStyle'
+                        iconShape.style.brushType = this.deepQuery(
+                            [data[i], this.serie], 'itemStyle.normal.areaStyle'
                         ) ? 'both' : 'stroke';
                         legend.setItemShape(name, iconShape);
                     }
                 }
                 else {
                     // 全局颜色定义
-                    defaultColor = zr.getColor(i);
+                    defaultColor = this.zr.getColor(i);
                 }
 
-                pointList = _getPointList(serie.polarIndex, data[i]);
+                pointList = this._getPointList(this.serie.polarIndex, data[i]);
                 // 添加拐点形状
-                _addSymbol(pointList, defaultColor, i, index);
+                this._addSymbol(
+                    pointList, defaultColor, i, index, this.serie.polarIndex);
                 // 添加数据形状
-                _addDataShape(
+                this._addDataShape(
                     pointList, defaultColor, data[i],
                     index, i, calculable
                 );
-                _radarDataCounter++;
+                this._radarDataCounter++;
             }
-            
-        }
+        },
 
         /**
          * 获取数据的点集
@@ -142,19 +164,23 @@
          * @param {Array<Object>} 处理的数据
          * @return {Array<Array<number>>} 点集
          */
-        function _getPointList(polarIndex, dataArr) {
+        _getPointList : function (polarIndex, dataArr) {
             var pointList = [];
             var vector;
-            var polar = component.polar;
+            var polar = this.component.polar;
 
+            var value;
             for (var i = 0, l = dataArr.value.length; i < l; i++) {
-                vector = polar.getVector(polarIndex, i, dataArr.value[i]);
+                value = this.getDataFromOption(dataArr.value[i]);
+                vector = value != '-' 
+                         ? polar.getVector(polarIndex, i, value)
+                         : false;
                 if (vector) {
                     pointList.push(vector);
                 } 
             }
             return pointList;
-        }
+        },
         
         /**
          * 添加拐点
@@ -163,23 +189,36 @@
          * @param {object} data 数据
          * @param {number} serieIndex
          */
-        function _addSymbol(pointList, defaultColor, dataIndex, seriesIndex) {
+        _addSymbol :function (pointList, defaultColor, dataIndex, seriesIndex, polarIndex) {
+            var series = this.series;
             var itemShape;
+            var polar = this.component.polar;
+
             for (var i = 0, l = pointList.length; i < l; i++) {
-                itemShape = self.getSymbolShape(
-                    series[seriesIndex], seriesIndex, 
-                    series[seriesIndex].data[dataIndex], dataIndex, '', 
+                itemShape = this.getSymbolShape(
+                    this.deepMerge(
+                        [series[seriesIndex].data[dataIndex], series[seriesIndex]]
+                    ),
+                    seriesIndex, 
+                    series[seriesIndex].data[dataIndex].value[i], i,
+                    polar.getIndicatorText(polarIndex, i),
                     pointList[i][0],    // x
                     pointList[i][1],    // y
-                    _symbol[_radarDataCounter % _symbol.length],
+                    this._symbol[this._radarDataCounter % this._symbol.length],
                     defaultColor,
                     '#fff',
                     'vertical'
                 );
-                itemShape.zlevel = _zlevelBase + 1;
-                self.shapeList.push(itemShape);
+                itemShape.zlevel = this.getZlevelBase();
+                itemShape.z = this.getZBase() + 1;
+                
+                ecData.set(itemShape, 'data', series[seriesIndex].data[dataIndex]);
+                ecData.set(itemShape, 'value', series[seriesIndex].data[dataIndex].value);
+                ecData.set(itemShape, 'dataIndex', dataIndex);
+                ecData.set(itemShape, 'special', i);
+                this.shapeList.push(itemShape);
             }
-        }
+        },
         
         /**
          * 添加数据图形
@@ -190,60 +229,63 @@
          * @param {number} dataIndex
          * @param {boolean} calcalable
          */ 
-        function _addDataShape(
+        _addDataShape : function (
             pointList, defaultColor, data,
             seriesIndex, dataIndex, calculable
         ) {
+            var series = this.series;
             // 多级控制
-            var queryTarget = [data, serie];
-            var nColor = self.getItemStyleColor(
-                self.deepQuery(
+            var queryTarget = [data, this.serie];
+            var nColor = this.getItemStyleColor(
+                this.deepQuery(
                     queryTarget, 'itemStyle.normal.color'
                 ),
                 seriesIndex,
                 dataIndex,
                 data
             );
-            var nLineWidth = self.deepQuery(
+            var nLineWidth = this.deepQuery(
                 queryTarget, 'itemStyle.normal.lineStyle.width'
             );
-            var nLineType = self.deepQuery(
+            var nLineType = this.deepQuery(
                 queryTarget, 'itemStyle.normal.lineStyle.type'
             );
-            var nAreaColor = self.deepQuery(
+            var nAreaColor = this.deepQuery(
                 queryTarget, 'itemStyle.normal.areaStyle.color'
             );
-            var nIsAreaFill = self.deepQuery(
+            var nIsAreaFill = this.deepQuery(
                 queryTarget, 'itemStyle.normal.areaStyle'
             );
             var shape = {
-                shape : 'polygon',
-                zlevel : _zlevelBase,
+                zlevel: this.getZlevelBase(),
+                z: this.getZBase(),
                 style : {
                     pointList   : pointList,
                     brushType   : nIsAreaFill ? 'both' : 'stroke',
                     color       : nAreaColor 
                                   || nColor 
-                                  || zrColor.alpha(defaultColor,0.5),
+                                  || (typeof defaultColor === 'string' 
+                                      ? zrColor.alpha(defaultColor,0.5) : defaultColor),
                     strokeColor : nColor || defaultColor,
                     lineWidth   : nLineWidth,
                     lineType    : nLineType
                 },
                 highlightStyle : {
-                    brushType   : self.deepQuery(
+                    brushType   : this.deepQuery(
                                       queryTarget,
                                       'itemStyle.emphasis.areaStyle'
                                   ) || nIsAreaFill 
                                   ? 'both' : 'stroke',
-                    color       : self.deepQuery(
+                    color       : this.deepQuery(
                                       queryTarget,
                                       'itemStyle.emphasis.areaStyle.color'
                                   ) 
                                   || nAreaColor 
                                   || nColor 
-                                  || zrColor.alpha(defaultColor,0.5),
-                    strokeColor : self.getItemStyleColor(
-                                       self.deepQuery(
+                                  || (typeof defaultColor === 'string' 
+                                      ? zrColor.alpha(defaultColor,0.5) : defaultColor),
+                    strokeColor : this.getItemStyleColor(
+                                       this.deepQuery(
                                            queryTarget, 'itemStyle.emphasis.color'
                                        ),
                                        seriesIndex,
@@ -251,11 +293,11 @@
                                        data
                                    )
                                    || nColor || defaultColor,
-                    lineWidth   : self.deepQuery(
+                    lineWidth   : this.deepQuery(
                                       queryTarget,
                                       'itemStyle.emphasis.lineStyle.width'
                                   ) || nLineWidth,
-                    lineType    : self.deepQuery(
+                    lineType    : this.deepQuery(
                                       queryTarget,
                                       'itemStyle.emphasis.lineStyle.type'
                                   ) || nLineType
@@ -269,49 +311,56 @@
                 dataIndex,              // 数据索引
                 data.name,              // 数据名称
                 // 附加指标信息 
-                component.polar.getIndicator(series[seriesIndex].polarIndex)
+                this.component.polar.getIndicator(series[seriesIndex].polarIndex)
             );
             if (calculable) {
                 shape.draggable = true;
-                self.setCalculable(shape);
+                this.setCalculable(shape);
             }
-            self.shapeList.push(shape);
-        }
+            
+            shape = new PolygonShape(shape); 
+            this.shapeList.push(shape);
+        },
 
         /**
          * 增加外围接受框
          * @param {number} serie的序列
          */
-        function _addDropBox(index) {
-            var polarIndex = self.deepQuery(
-                _queryTarget, 'polarIndex'
+        _addDropBox : function (index) {
+            var series = this.series;
+            var polarIndex = this.deepQuery(
+                this._queryTarget, 'polarIndex'
             );
-            if (!_dropBoxList[polarIndex]) {
-                var shape = component.polar.getDropBox(polarIndex);
-                shape.zlevel = _zlevelBase;
-                self.setCalculable(shape);
+            if (!this._dropBoxList[polarIndex]) {
+                var shape = this.component.polar.getDropBox(polarIndex);
+                shape.zlevel = this.getZlevelBase();
+                shape.z = this.getZBase();
+                
+                this.setCalculable(shape);
                 ecData.pack(shape, series, index, undefined, -1);
-                self.shapeList.push(shape);
-                _dropBoxList[polarIndex] = true;
+                this.shapeList.push(shape);
+                this._dropBoxList[polarIndex] = true;
             }
-        }
+        },
 
         /**
          * 数据项被拖拽出去，重载基类方法
          */
-        function ondragend(param, status) {
-            if (!self.isDragend || !param.target) {
+        ondragend : function (param, status) {
+            var series = this.series;
+            if (!this.isDragend || !param.target) {
                 // 没有在当前实例上发生拖拽行为则直接返回
                 return;
             }
 
-            var target = param.target;      // 被拖拽图形元素
+            // 被拖拽图形元素
+            var target = param.target;
 
             var seriesIndex = ecData.get(target, 'seriesIndex');
             var dataIndex = ecData.get(target, 'dataIndex');
 
             // 被拖拽的图形是饼图sector，删除被拖拽走的数据
-            component.legend && component.legend.del(
+            this.component.legend && this.component.legend.del(
                 series[seriesIndex].data[dataIndex].name
             );
 
@@ -322,16 +371,17 @@
             status.needRefresh = true;
 
             // 处理完拖拽事件后复位
-            self.isDragend = false;
+            this.isDragend = false;
 
             return;
-        }
+        },
 
          /**
          * 数据项被拖拽进来， 重载基类方法
          */
-        function ondrop(param, status) {
-            if (!self.isDrop || !param.target) {
+        ondrop : function (param, status) {
+            var series = this.series;
+            if (!this.isDrop || !param.target) {
                 // 没有在当前实例上发生拖拽行为则直接返回
                 return;
             }
@@ -343,10 +393,10 @@
             var dataIndex = ecData.get(target, 'dataIndex');
 
             var data;
-            var legend = component.legend;
+            var legend = this.component.legend;
             var value;
 
-            if (dataIndex == -1) {
+            if (dataIndex === -1) {
                 data = {
                     value : ecData.get(dragged, 'value'),
                     name : ecData.get(dragged, 'name')
@@ -364,10 +414,10 @@
                 var accMath = require('../util/accMath');
                 data = series[seriesIndex].data[dataIndex];
                 legend && legend.del(data.name);
-                data.name += option.nameConnector
+                data.name += this.option.nameConnector
                              + ecData.get(dragged, 'name');
                 value = ecData.get(dragged, 'value');
-                for (var i = 0 ; i < value.length; i ++) {
+                for (var i = 0 ; i < value.length; i++) {
                     data.value[i] = accMath.accAdd(data.value[i], value[i]);
                 }
                 
@@ -381,97 +431,27 @@
             status.dragIn = status.dragIn || true;
 
             // 处理完拖拽事件后复位
-            self.isDrop = false;
+            this.isDrop = false;
 
             return;
-        }
-
-        /**
-         * 构造函数默认执行的初始化方法，也用于创建实例后动态修改
-         * @param {Object} newZr
-         * @param {Object} newSeries
-         * @param {Object} newComponent
-         */
-        function init(newOption, newComponent) {
-            component = newComponent;
-            refresh(newOption);
-        }
+        },
 
         /**
          * 刷新
          */
-        function refresh(newOption) {
+        refresh : function (newOption) {
             if (newOption) {
-                option = newOption;
-                series = option.series;
-            }
-            self.clear();
-            _buildShape();
-        }
-
-        function animation() {
-            var duration = self.query(option, 'animationDuration');
-            var easing = self.query(option, 'animationEasing');
-            var dataIndex;
-            var seriesIndex;
-            var data;
-            var serie;
-            var polarIndex;
-            var polar = component.polar;
-            var center;
-            var item;
-            var x;
-            var y;
-
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                if (self.shapeList[i].shape == 'polygon') {
-                    item = self.shapeList[i];
-                    seriesIndex = ecData.get(item, 'seriesIndex');
-                    dataIndex = ecData.get(item, 'dataIndex');
-
-                    serie = series[seriesIndex];
-                    data = serie.data[dataIndex];
-
-                    polarIndex = self.deepQuery(
-                        [data, serie, option], 'polarIndex');
-                    center = polar.getCenter(polarIndex);
-                    x = center[0];
-                    y = center[1];
-                    zr.modShape(
-                        self.shapeList[i].id, 
-                        {
-                            scale : [0.1, 0.1, x, y]
-                        },
-                        true
-                    );
-                    
-                    zr.animate(item.id, '')
-                        .when(
-                            (self.query(serie,'animationDuration')
-                            || duration)
-                            + dataIndex * 100,
-                            {scale : [1, 1, x, y]}
-                        )
-                        .start(
-                            self.query(serie, 'animationEasing') || easing
-                        );
-                }
+                this.option = newOption;
+                this.series = newOption.series;
             }
             
-            self.animationMark(duration, easing);
+            this.backupShapeList();
+            this._buildShape();
         }
-
-        // 重载基类方法
-        self.animation = animation;
-        
-        self.init = init;
-        self.refresh = refresh;
-        self.ondrop = ondrop;
-        self.ondragend = ondragend;
-
-        init(option, component);
-    }
-
+    };
+    
+    zrUtil.inherits(Radar, ChartBase);
+    
     // 图表注册
     require('../chart').define('radar', Radar);
     

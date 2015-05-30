@@ -1,40 +1,59 @@
 var developMode = false;
 if (developMode) {
-    // for develop
-    require.config({
-        paths: {air: 'http://echarts.iconpng.com/china'},
-        packages: [
-            {
-                name: 'echarts',
-                location: '../../../../src',
-                main: 'echarts'
-            },
-            {
-                name: 'zrender',
-                //location: 'http://ecomfe.github.io/zrender/src',
-                location: '../../../../../zrender/src',
-                main: 'zrender'
-            }
-        ]
-    });
+    window.esl = null;
+    window.define = null;
+    window.require = null;
+    (function () {
+        var script = document.createElement('script');
+        script.async = true;
+
+        var pathname = location.pathname;
+
+        var pathSegs = pathname.slice(pathname.indexOf('doc')).split('/');
+        var pathLevelArr = new Array(pathSegs.length - 1);
+        script.src = pathLevelArr.join('../') + 'asset/js/esl/esl.js';
+        if (script.readyState) {
+            script.onreadystatechange = fireLoad;
+        }
+        else {
+            script.onload = fireLoad;
+        }
+        (document.getElementsByTagName('head')[0] || document.body).appendChild(script);
+        
+        function fireLoad() {
+            script.onload = script.onreadystatechange = null;
+            setTimeout(loadedListener,100);
+        }
+        function loadedListener() {
+            // for develop
+            require.config({
+                paths: {air: 'http://echarts.iconpng.com/china'},
+                packages: [
+                    {
+                        name: 'echarts',
+                        location: '../../../../src',
+                        main: 'echarts'
+                    },
+                    {
+                        name: 'zrender',
+                        //location: 'http://ecomfe.github.io/zrender/src',
+                        location: '../../../../../zrender/src',
+                        main: 'zrender'
+                    }
+                ]
+            });
+            launchExample();
+        }
+    })();
 }
 else {
-    var fileLocation = '../../www/js/echarts-map';
     require.config({
-        paths:{ 
-            air: 'http://echarts.iconpng.com/china',
-            echarts:fileLocation,
-            'echarts/chart/bar' : fileLocation,
-            'echarts/chart/line': fileLocation,
-            'echarts/chart/scatter': fileLocation,
-            'echarts/chart/k': fileLocation,
-            'echarts/chart/pie': fileLocation,
-            'echarts/chart/radar': fileLocation,
-            'echarts/chart/map': fileLocation,
-            'echarts/chart/chord': fileLocation,
-            'echarts/chart/force': fileLocation
+        paths: {
+            echarts: '../../www/js',
+            air: 'http://echarts.iconpng.com/china'
         }
     });
+    launchExample();
 }
 
 var EC_READY = false;
@@ -45,46 +64,56 @@ var myChart20;
 var myChart21;
 var myChart22;
 var myChart3;
-require(
-    [
-        'echarts',
-        'echarts/chart/line',
-        'echarts/chart/bar',
-        'echarts/chart/scatter',
-        'echarts/chart/radar',
-        'echarts/chart/map'
-    ],
-    function(ec) {
-        EC_READY = true;
-        myChart0 = ec.init(document.getElementById('g0')).showLoading({effect:'bubble'});
-        myChart1 = ec.init(document.getElementById('g1')).showLoading({effect:'bubble'});
-        myChart20 = ec.init(document.getElementById('g20')).showLoading({effect:'bubble'});
-        myChart21 = ec.init(document.getElementById('g21')).showLoading({effect:'bubble'});
-        myChart22 = ec.init(document.getElementById('g22')).showLoading({effect:'bubble'});
-        myChart3 = ec.init(document.getElementById('g3')).showLoading({effect:'bubble'});
-        
-        require(
-            ['air'],
-            function (airData) {
-                DATA_READY = true;
-                //airData = testData;
-                $('#time')[0].innerHTML = airData[0].time_point.replace(/[T|Z]/g, ' ')
-                var ecConfig = require('echarts/config');
-                
-                //console.log(airData);
-                data.format(airData,testData);
-                showTabContent(0, oCurTabIdx);
-                showTabContent(1);
-                showTabContent(2);
-                showTabContent(3, rCurTabIdx);
-                myChart0.on(ecConfig.EVENT.MAP_ROAM, extMark);
-                
-                myChart1.on(ecConfig.EVENT.LEGEND_SELECTED, legendShare);
-                myChart1.on(ecConfig.EVENT.RESTORE, legendShare);
-            }
-        );
+
+var isExampleLaunched;
+function launchExample() {
+    if (isExampleLaunched) {
+        return;
     }
-);
+
+    // 按需加载
+    isExampleLaunched = 1;
+    require(
+        [
+            'echarts',
+            'echarts/chart/line',
+            'echarts/chart/bar',
+            'echarts/chart/scatter',
+            'echarts/chart/radar',
+            'echarts/chart/map'
+        ],
+        function (ec) {
+            EC_READY = true;
+            myChart0 = ec.init(document.getElementById('g0')).showLoading({effect:'bubble'});
+            myChart1 = ec.init(document.getElementById('g1')).showLoading({effect:'bubble'});
+            myChart20 = ec.init(document.getElementById('g20')).showLoading({effect:'bubble'});
+            myChart21 = ec.init(document.getElementById('g21')).showLoading({effect:'bubble'});
+            myChart22 = ec.init(document.getElementById('g22')).showLoading({effect:'bubble'});
+            myChart3 = ec.init(document.getElementById('g3')).showLoading({effect:'bubble'});
+            
+            require(
+                ['air'],
+                function (airData) {
+                    DATA_READY = true;
+                    //airData = testData;
+                    $('#time')[0].innerHTML = airData[0].time_point.replace(/[T|Z]/g, ' ')
+                    var ecConfig = require('echarts/config');
+                    
+                    //console.log(airData);
+                    data.format(airData,testData);
+                    showTabContent(0, oCurTabIdx);
+                    showTabContent(1);
+                    showTabContent(2);
+                    showTabContent(3, rCurTabIdx);
+                    myChart0.on(ecConfig.EVENT.MAP_ROAM, extMark);
+                    
+                    myChart1.on(ecConfig.EVENT.LEGEND_SELECTED, legendShare);
+                    myChart1.on(ecConfig.EVENT.RESTORE, legendShare);
+                }
+            );
+        }
+    );
+}
 
 var oCurTabIdx = 'aqi';
 var rCurTabIdx = 'aqi';
@@ -111,7 +140,7 @@ function showTabContent(idx, type) {
     functionMap['chart' + idx](type);
 }
 
-var shapeList = [];
+var extShapeList = [];
 var dataWorst;
 var overviewContent = {
     aqi : [
@@ -154,7 +183,7 @@ functionMap.chart0 = function (type) {
     myChart0.hideLoading();
     myChart0.setOption(option0(type));
     dataWorst = data[type];
-    setTimeout(extMark, 200);
+    setTimeout(extMark, 100);
     $('#overview-head')[0].innerHTML = overviewContent[type][0];
     $('#overview-content')[0].innerHTML = overviewContent[type][1];
     $('#overview-link')[0].href = overviewContent[type][2];
@@ -162,27 +191,28 @@ functionMap.chart0 = function (type) {
 
 function extMark() {
     var map = myChart0.chart.map;
-    if (!map.geo2pos('china','北京')) {
-        setTimeout(extMark, 200);
+    if (!map || !map.geo2pos('china','北京')) {
+        setTimeout(extMark, 1000);
         return;
     }
     var zr = myChart0.getZrender();
-    zr.delShape(shapeList);
-    shapeList = [];
+    zr.delShape(extShapeList);
+    extShapeList = [];
     var x = Math.round(zr.getWidth() - 130);
     var y = 50;
     var pos;
     var city;
     var len = dataWorst.length;
+    var lineShape = require('zrender/shape/Line');
     for (var i = len - 1, l = len - 2; i > l; i--) {
         // 最差10位
         city = dataWorst[i].name;
         pos = map.getPosByGeo('china', cityGeo[city]);
         //pos = map.geo2pos('china', cityGeo[city]);
-        shapeList.push({
+        extShapeList.push(new lineShape({
             shape : 'line',
-            id : zr.newShapeId(),
-            zlevel : 5,
+            zlevel : 0,
+            z : 5,
             style : {
                 xStart : pos[0],
                 yStart : pos[1],
@@ -196,14 +226,14 @@ function extMark() {
                 text : city + ' : ' + dataWorst[i].value,
                 textPosition: 'end'//'specific'
             }
-        });
+        }));
         y += 30;
     }
-    for (var i = 0, l = shapeList.length; i < l; i++) {
-        zr.addShape(shapeList[i])
+    for (var i = 0, l = extShapeList.length; i < l; i++) {
+        zr.addShape(extShapeList[i])
     }
     zr.refresh();
-    //map.appendShape('china', shapeList);
+    //map.appendShape('china', extShapeList);
 }
 
 functionMap.chart1 = function () {
@@ -249,10 +279,10 @@ functionMap.chart3 = function (type) {
 }
 
 var resizeTicket;
-window.onload = function() {
-    window.onresize = function() {
+window.onload = function () {
+    window.onresize = function () {
         clearTimeout(resizeTicket);
-        resizeTicket = setTimeout(function(){
+        resizeTicket = setTimeout(function (){
             myChart0.resize();
             myChart1.resize();
             myChart20.resize();

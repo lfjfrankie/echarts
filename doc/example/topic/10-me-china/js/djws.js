@@ -9,7 +9,7 @@ var eNameMap = {
 };
 //颜色映射
 var eColorMap = {
-    'GDP' : '#87cefa',
+    'GDP' : '#1e90ff',
     'Financial' : '#ff7f50',
     'Estate' : '#da70d6',
     'PI' : '#32cd32',
@@ -18,43 +18,94 @@ var eColorMap = {
 };
 //---------
 
-var fileLocation = '../../www/js/echarts-map';
-require.config({
-    paths:{ 
-        echarts:fileLocation,
-        'echarts/chart/bar' : fileLocation,
-        'echarts/chart/line': fileLocation,
-        'echarts/chart/scatter': fileLocation,
-        'echarts/chart/k': fileLocation,
-        'echarts/chart/pie': fileLocation,
-        'echarts/chart/radar': fileLocation,
-        'echarts/chart/map': fileLocation,
-        'echarts/chart/chord': fileLocation,
-        'echarts/chart/force': fileLocation
-    }
-});
+var developMode = false;
+if (developMode) {
+    window.esl = null;
+    window.define = null;
+    window.require = null;
+    (function () {
+        var script = document.createElement('script');
+        script.async = true;
+
+        var pathname = location.pathname;
+
+        var pathSegs = pathname.slice(pathname.indexOf('doc')).split('/');
+        var pathLevelArr = new Array(pathSegs.length - 1);
+        script.src = pathLevelArr.join('../') + 'asset/js/esl/esl.js';
+        if (script.readyState) {
+            script.onreadystatechange = fireLoad;
+        }
+        else {
+            script.onload = fireLoad;
+        }
+        (document.getElementsByTagName('head')[0] || document.body).appendChild(script);
+        
+        function fireLoad() {
+            script.onload = script.onreadystatechange = null;
+            setTimeout(loadedListener,100);
+        }
+        function loadedListener() {
+            // for develop
+            require.config({
+                packages: [
+                    {
+                        name: 'echarts',
+                        location: '../../../../src',
+                        main: 'echarts'
+                    },
+                    {
+                        name: 'zrender',
+                        //location: 'http://ecomfe.github.io/zrender/src',
+                        location: '../../../../../zrender/src',
+                        main: 'zrender'
+                    }
+                ]
+            });
+            launchExample();
+        }
+    })();
+}
+else {
+    require.config({
+        paths: {
+            echarts: '../../www/js'
+        }
+    });
+    launchExample();
+}
+
 
 var EC_READY = false;
 var myChart0;
-require(
-    [
-        'echarts',
-        'echarts/chart/line',
-        'echarts/chart/bar',
-        'echarts/chart/scatter',
-        //'echarts/chart/k',
-        'echarts/chart/pie',
-        'echarts/chart/radar',
-        //'echarts/chart/force',
-        //'echarts/chart/chord',
-        'echarts/chart/map'
-    ],
-    function(ec) {
-        EC_READY = true;
-        myChart0 = ec.init(document.getElementById('g0')).setOption(option0()); 
-        showTabContent(1);
+
+var isExampleLaunched;
+function launchExample() {
+    if (isExampleLaunched) {
+        return;
     }
-);
+
+    // 按需加载
+    isExampleLaunched = 1;
+    require(
+        [
+            'echarts',
+            'echarts/chart/line',
+            'echarts/chart/bar',
+            'echarts/chart/scatter',
+            //'echarts/chart/k',
+            'echarts/chart/pie',
+            'echarts/chart/radar',
+            //'echarts/chart/force',
+            //'echarts/chart/chord',
+            'echarts/chart/map'
+        ],
+        function (ec) {
+            EC_READY = true;
+            myChart0 = ec.init(document.getElementById('g0')).setOption(option0()); 
+            showTabContent(1);
+        }
+    );
+}
 
 var curTabIdx = 1;
 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
@@ -91,7 +142,7 @@ function hideTabContent(idx) {
     functionMap['chart' + idx + 'dispose'](idx);
 }
 
-// first chart
+// last chart
 var myChart3;
 var curSelected = {
     'GDP' : true,
@@ -106,11 +157,11 @@ functionMap.chart3 = function (idx) {
     myChart3 = require('echarts').init(document.getElementById('g' + idx));
     myChart3.setOption(option1(curSelected));
     // 图例状态保持
-    myChart3.on(require('echarts/config').EVENT.LEGEND_SELECTED, function(param){
+    myChart3.on(require('echarts/config').EVENT.LEGEND_SELECTED, function (param){
         curSelected = param.selected;
     });
 }
-functionMap.chart3dispose = function() {
+functionMap.chart3dispose = function () {
     if (myChart3) {
         myChart3.dispose();
         myChart3 = false;
@@ -158,35 +209,25 @@ functionMap.chart2dispose = function () {
     }
 }
 
-// third chart
+// first chart
 var myChart1;
 var curRange = false;
 functionMap.chart1 = function (idx) {
     functionMap.chart1dispose(idx);
     myChart1 = require('echarts').init(document.getElementById('g' + idx));
-    //$('input:radio[name="optionsRadios"]:checked').val()
     myChart1.setOption(option3(curEIndex));
-    // 值域状态保持
-    myChart1.on(require('echarts/config').EVENT.DATA_RANGE, function(param){
-        var max = dataMap['dataA' + curEIndex][curYear + 'max'];
-        curRange = {
-            start : param.range.start / 100 * max,
-            end : param.range.end == 100 
-                  ? -1 : (param.range.end / 100 * max),
-        }
-    });
 }
-functionMap.chart1dispose = function() {
+functionMap.chart1dispose = function () {
     if (myChart1) {
         myChart1.dispose();
         myChart1 = false; 
     }
 }
 var resizeTicket;
-window.onload = function() {
-    window.onresize = function() {
+window.onload = function () {
+    window.onresize = function () {
         clearTimeout(resizeTicket);
-        resizeTicket = setTimeout(function(){
+        resizeTicket = setTimeout(function (){
             myChart0.resize();
             if (curTabIdx == 1) {
                 myChart1.resize();

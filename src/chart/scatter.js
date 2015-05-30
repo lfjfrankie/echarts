@@ -2,10 +2,61 @@
  * echarts图表类：散点图
  *
  * @desc echarts基于Canvas，纯Javascript图表库，提供直观，生动，可交互，可个性化定制的数据统计图表。
- * @author Kener (@Kener-林峰, linzhifeng@baidu.com)
+ * @author Kener (@Kener-林峰, kener.linfeng@gmail.com)
  *
  */
-define(function(require) {
+define(function (require) {
+    var ChartBase = require('./base');
+    
+    // 图形依赖
+    var SymbolShape = require('../util/shape/Symbol');
+    // 组件依赖
+    require('../component/axis');
+    require('../component/grid');
+    require('../component/dataZoom');
+    require('../component/dataRange');
+    
+    var ecConfig = require('../config');
+    // 散点图默认参数
+    ecConfig.scatter = {
+        zlevel: 0,                  // 一级层叠
+        z: 2,                       // 二级层叠
+        clickable: true,
+        legendHoverLink: true,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        // symbol: null,        // 图形类型
+        symbolSize: 4,          // 图形大小，半宽（半径）参数，当图形为方向或菱形则总宽度为symbolSize * 2
+        // symbolRotate: null,  // 图形旋转控制
+        large: false,           // 大规模散点图
+        largeThreshold: 2000,   // 大规模阀值，large为true且数据量>largeThreshold才启用大规模模式
+        itemStyle: {
+            normal: {
+                // color: 各异,
+                label: {
+                    show: false
+                    // formatter: 标签文本格式器，同Tooltip.formatter，不支持异步回调
+                    // position: 默认自适应，水平布局为'top'，垂直布局为'right'，可选为
+                    //           'inside'|'left'|'right'|'top'|'bottom'
+                    // textStyle: null      // 默认使用全局文本样式，详见TEXTSTYLE
+                }
+            },
+            emphasis: {
+                // color: '各异'
+                label: {
+                    show: false
+                    // formatter: 标签文本格式器，同Tooltip.formatter，不支持异步回调
+                    // position: 默认自适应，水平布局为'top'，垂直布局为'right'，可选为
+                    //           'inside'|'left'|'right'|'top'|'bottom'
+                    // textStyle: null      // 默认使用全局文本样式，详见TEXTSTYLE
+                }
+            }
+        }
+    };
+
+    var zrUtil = require('zrender/tool/util');
+    var zrColor = require('zrender/tool/color');
+    
     /**
      * 构造函数
      * @param {Object} messageCenter echart消息中心
@@ -13,31 +64,28 @@ define(function(require) {
      * @param {Object} series 数据
      * @param {Object} component 组件
      */
-    function Scatter(ecConfig, messageCenter, zr, option, component){
-        // 基类装饰
-        var ComponentBase = require('../component/base');
-        ComponentBase.call(this, ecConfig, zr);
-        // 可计算特性装饰
-        var CalculableBase = require('./calculableBase');
-        CalculableBase.call(this, zr, option);
+    function Scatter(ecTheme, messageCenter, zr, option, myChart){
+        // 图表基类
+        ChartBase.call(this, ecTheme, messageCenter, zr, option, myChart);
 
-        var zrColor = require('zrender/tool/color');
-
-        var self = this;
-        self.type = ecConfig.CHART_TYPE_SCATTER;
-
-        var series;                 // 共享数据源，不要修改跟自己无关的项
-
-        var _zlevelBase = self.getZlevelBase();
-        
-        var _sIndex2ColorMap = {};  // series默认颜色索引，seriesIndex索引到color
-        var _symbol = ecConfig.symbolList;
-        var _sIndex2ShapeMap = {};  // series图形类型，seriesIndex索引到_symbol
-
-        function _buildShape() {
-            self.selectedMap = {};
+        this.refresh(option);
+    }
+    
+    Scatter.prototype = {
+        type: ecConfig.CHART_TYPE_SCATTER,
+        /**
+         * 绘制图形
+         */
+        _buildShape: function () {
+            var series = this.series;
+            this._sIndex2ColorMap = {};  // series默认颜色索引，seriesIndex索引到color
+            this._symbol = this.option.symbolList;
+            this._sIndex2ShapeMap = {};  // series图形类型，seriesIndex索引到_symbol
             
-            var legend = component.legend;
+            this.selectedMap = {};
+            this.xMarkMap = {};
+            
+            var legend = this.component.legend;
             var seriesArray = [];
             var serie;                              // 临时映射变量
             var serieName;                          // 临时映射变量
@@ -46,22 +94,28 @@ define(function(require) {
             for (var i = 0, l = series.length; i < l; i++) {
                 serie = series[i];
                 serieName = serie.name;
-                if (serie.type == ecConfig.CHART_TYPE_SCATTER) {
-                    series[i] = self.reformOption(series[i]);
-                    _sIndex2ShapeMap[i] = self.query(serie, 'symbol')
-                                          || _symbol[i % _symbol.length];
+                if (serie.type === ecConfig.CHART_TYPE_SCATTER) {
+                    series[i] = this.reformOption(series[i]);
+                    this.legendHoverLink = series[i].legendHoverLink || this.legendHoverLink;
+                    this._sIndex2ShapeMap[i] = this.query(serie, 'symbol')
+                                          || this._symbol[i % this._symbol.length];
                     if (legend){
-                        self.selectedMap[serieName] = legend.isSelected(serieName);
-                            
-                        _sIndex2ColorMap[i] = zrColor.alpha(legend.getColor(serieName), 0.5);
+                        this.selectedMap[serieName] = legend.isSelected(serieName);
+                        this._sIndex2ColorMap[i] = zrColor.alpha(legend.getColor(serieName), 0.5);
                             
                         iconShape = legend.getItemShape(serieName);
                         if (iconShape) {
                             // 回调legend，换一个更形象的icon
-                            iconShape.shape = 'icon';
-                            var iconType = _sIndex2ShapeMap[i];
+                            var iconType = this._sIndex2ShapeMap[i];
                             iconShape.style.brushType = iconType.match('empty') ? 'stroke' : 'both';
                             iconType = iconType.replace('empty', '').toLowerCase();
+                            
+                            if (iconType.match('rectangle')) {
+                                iconShape.style.x += Math.round(
+                                    (iconShape.style.width - iconShape.style.height) / 2
+                                );
+                                iconShape.style.width = iconShape.style.height;
+                            }
                             
                             if (iconType.match('star')) {
                                 iconShape.style.n = (iconType.replace('star','') - 0) || 5;
@@ -73,9 +127,7 @@ define(function(require) {
                                     new RegExp('^image:\\/\\/'), ''
                                 );
                                 iconShape.style.x += Math.round(
-                                    (iconShape.style.width 
-                                     - iconShape.style.height) 
-                                    / 2
+                                    (iconShape.style.width - iconShape.style.height) / 2
                                 );
                                 iconShape.style.width = iconShape.style.height;
                                 iconType = 'image';
@@ -86,30 +138,29 @@ define(function(require) {
                         }
                     } 
                     else {
-                        self.selectedMap[serieName] = true;
-                        _sIndex2ColorMap[i] = zr.getColor(i);
+                        this.selectedMap[serieName] = true;
+                        this._sIndex2ColorMap[i] = zrColor.alpha(this.zr.getColor(i), 0.5);
                     }
                       
-                    if (self.selectedMap[serieName]) {
+                    if (this.selectedMap[serieName]) {
                         seriesArray.push(i);
                     }
                 }
             }
-            if (seriesArray.length === 0) {
-                return;
-            }
-            _buildSeries(seriesArray);
-
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                self.shapeList[i].id = zr.newShapeId(self.type);
-                zr.addShape(self.shapeList[i]);
-            }
-        }
+            
+            this._buildSeries(seriesArray);
+            
+            this.addShapeList();
+        },
 
         /**
          * 构建类目轴为水平方向的散点图系列
          */
-        function _buildSeries(seriesArray) {
+        _buildSeries: function (seriesArray) {
+            if (seriesArray.length === 0) {
+                return;
+            }
+            var series = this.series;
             var seriesIndex;
             var serie;
             var data;
@@ -127,18 +178,14 @@ define(function(require) {
                     continue;
                 }
                 
-                xAxis = component.xAxis.getAxis(serie.xAxisIndex || 0);
-                yAxis = component.yAxis.getAxis(serie.yAxisIndex || 0);
+                xAxis = this.component.xAxis.getAxis(serie.xAxisIndex || 0);
+                yAxis = this.component.yAxis.getAxis(serie.yAxisIndex || 0);
                 
                 pointList[seriesIndex] = [];
                 for (var i = 0, l = serie.data.length; i < l; i++) {
                     data = serie.data[i];
-                    value = typeof data != 'undefined'
-                            ? (typeof data.value != 'undefined'
-                              ? data.value
-                              : data)
-                            : '-';
-                    if (value == '-' || value.length < 2) {
+                    value = this.getDataFromOption(data, '-');
+                    if (value === '-' || value.length < 2) {
                         // 数据格式不符
                         continue;
                     }
@@ -152,61 +199,28 @@ define(function(require) {
                     ]);
                     
                 }
-                _markMap(xAxis, yAxis, serie.data, pointList[seriesIndex]);
-                self.buildMark(
-                    serie,
-                    seriesIndex,
-                    component,
-                    {
-                        xMarkMap : _needMarkMap(seriesIndex) 
-                                   ? _markMap(xAxis, yAxis, serie.data, pointList[seriesIndex])
-                                   : {}
-                    }
-                );
+                this.xMarkMap[seriesIndex] = this._markMap(
+                    xAxis, yAxis, serie.data, pointList[seriesIndex]
+                ); 
+                this.buildMark(seriesIndex);
             }
             
             // console.log(pointList)
-            _buildPointList(pointList);
-        }
+            this._buildPointList(pointList);
+        },
         
-        function _needMarkMap(seriesIndex) {
-            var serie = series[seriesIndex];
-            var mark = [];
-            if (serie.markPoint && serie.markPoint.data) {
-                mark.push(serie.markPoint.data);
-            }
-            if (serie.markLine && serie.markLine.data) {
-                mark.push(serie.markLine.data);
-            }
-            
-            var data;
-            var len = mark.length;
-            while (len--) {
-                data = mark[len];
-                for (var i = 0, l = data.length; i < l; i++) {
-                    if (data[i].type == 'max' 
-                        || data[i].type == 'min' 
-                        || data[i].type == 'average'
-                    ) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        
-        function _markMap(xAxis, yAxis, data, pointList) {
+        _markMap: function (xAxis, yAxis, data, pointList) {
             var xMarkMap = {
-                min0 : Number.POSITIVE_INFINITY,
-                max0 : Number.NEGATIVE_INFINITY,
-                sum0 : 0,
-                counter0 : 0,
-                average0 : 0,
-                min1 : Number.POSITIVE_INFINITY,
-                max1 : Number.NEGATIVE_INFINITY,
-                sum1 : 0,
-                counter1 : 0,
-                average1 : 0
+                min0: Number.POSITIVE_INFINITY,
+                max0: Number.NEGATIVE_INFINITY,
+                sum0: 0,
+                counter0: 0,
+                average0: 0,
+                min1: Number.POSITIVE_INFINITY,
+                max1: Number.NEGATIVE_INFINITY,
+                sum1: 0,
+                counter1: 0,
+                average1: 0
             };
             var value;
             for (var i = 0, l = pointList.length; i < l; i++) {
@@ -246,12 +260,12 @@ define(function(require) {
                 xMarkMap.counter1++;
             }
             
-            var gridX = component.grid.getX();
-            var gridXend = component.grid.getXend();
-            var gridY = component.grid.getY();
-            var gridYend = component.grid.getYend();
+            var gridX = this.component.grid.getX();
+            var gridXend = this.component.grid.getXend();
+            var gridY = this.component.grid.getY();
+            var gridYend = this.component.grid.getYend();
             
-            xMarkMap.average0 = (xMarkMap.sum0 / xMarkMap.counter0).toFixed(2) - 0;
+            xMarkMap.average0 = xMarkMap.sum0 / xMarkMap.counter0;
             var x = xAxis.getCoord(xMarkMap.average0); 
             // 横轴平均纵向
             xMarkMap.averageLine0 = [
@@ -267,7 +281,7 @@ define(function(require) {
                 [xMarkMap.maxX0, gridY]
             ];
             
-            xMarkMap.average1 = (xMarkMap.sum1 / xMarkMap.counter1).toFixed(2) - 0;
+            xMarkMap.average1 = xMarkMap.sum1 / xMarkMap.counter1;
             var y = yAxis.getCoord(xMarkMap.average1);
             // 纵轴平均横向
             xMarkMap.averageLine1 = [
@@ -284,12 +298,13 @@ define(function(require) {
             ];
             
             return xMarkMap;
-        }
+        },
         
         /**
          * 生成折线和折线上的拐点
          */
-        function _buildPointList(pointList) {
+        _buildPointList: function (pointList) {
+            var series = this.series;
             var serie;
             var seriesPL;
             var singlePoint;
@@ -298,15 +313,15 @@ define(function(require) {
                 serie = series[seriesIndex];
                 seriesPL = pointList[seriesIndex];                
                 if (serie.large && serie.data.length > serie.largeThreshold) {
-                    self.shapeList.push(_getLargeSymbol(
+                    this.shapeList.push(this._getLargeSymbol(
                         seriesPL, 
-                        self.getItemStyleColor(
-                            self.query(
+                        this.getItemStyleColor(
+                            this.query(
                                 serie, 'itemStyle.normal.color'
                             ),
                             seriesIndex,
                             -1
-                        ) || _sIndex2ColorMap[seriesIndex]
+                        ) || this._sIndex2ColorMap[seriesIndex]
                     ));
                     continue;
                 }
@@ -322,196 +337,139 @@ define(function(require) {
                 
                 for (var i = 0, l = seriesPL.length; i < l; i++) {
                     singlePoint = seriesPL[i];
-                    shape = _getSymbol(
+                    shape = this._getSymbol(
                         seriesIndex,    // seriesIndex
                         singlePoint[2], // dataIndex
                         singlePoint[3], // name
                         singlePoint[0], // x
-                        singlePoint[1] // y
+                        singlePoint[1]  // y
                     );
-                    shape && self.shapeList.push(shape);
+                    shape && this.shapeList.push(shape);
                 }
             }
-            // console.log(self.shapeList)
-        }
+            // console.log(this.shapeList)
+        },
 
         /**
          * 生成折线图上的拐点图形
          */
-        function _getSymbol(seriesIndex, dataIndex, name, x, y) {
+        _getSymbol: function (seriesIndex, dataIndex, name, x, y) {
+            var series = this.series;
             var serie = series[seriesIndex];
             var data = serie.data[dataIndex];
             
-            var dataRange = component.dataRange;
+            var dataRange = this.component.dataRange;
             var rangColor;
             if (dataRange) {
                 rangColor = isNaN(data[2]) 
-                            ? _sIndex2ColorMap[seriesIndex]
+                            ? this._sIndex2ColorMap[seriesIndex]
                             : dataRange.getColor(data[2]);
                 if (!rangColor) {
                     return null;
                 }
             }
             else {
-                rangColor = _sIndex2ColorMap[seriesIndex];
+                rangColor = this._sIndex2ColorMap[seriesIndex];
             }
             
-            var itemShape = self.getSymbolShape(
+            var itemShape = this.getSymbolShape(
                 serie, seriesIndex, data, dataIndex, name, 
                 x, y,
-                _sIndex2ShapeMap[seriesIndex], 
+                this._sIndex2ShapeMap[seriesIndex], 
                 rangColor,
                 'rgba(0,0,0,0)',
                 'vertical'
             );
-            itemShape.zlevel = _zlevelBase;
-            itemShape._mark = false; // 非mark
+            itemShape.zlevel = this.getZlevelBase();
+            itemShape.z = this.getZBase();
+            
             itemShape._main = true;
             return itemShape;
-        }
+        },
         
-        function _getLargeSymbol(pointList, nColor) {
-            return {
-                shape : 'symbol',
-                zlevel : _zlevelBase,
-                _main : true,
+        _getLargeSymbol: function (pointList, nColor) {
+            return new SymbolShape({
+                zlevel: this.getZlevelBase(),
+                z: this.getZBase(),
+                _main: true,
                 hoverable: false,
-                style : {
-                    pointList : pointList,
-                    color : nColor,
-                    strokeColor : nColor
+                style: {
+                    pointList: pointList,
+                    color: nColor,
+                    strokeColor: nColor
+                },
+                highlightStyle: {
+                    pointList: []
                 }
-            };
-        }
+            });
+        },
         
         // 位置转换
-        function getMarkCoord(serie, seriesIndex, mpData, markCoordParams) {
-            var xAxis = component.xAxis.getAxis(serie.xAxisIndex);
-            var yAxis = component.yAxis.getAxis(serie.yAxisIndex);
+        getMarkCoord: function (seriesIndex, mpData) {
+            var serie = this.series[seriesIndex];
+            var xMarkMap = this.xMarkMap[seriesIndex];
+            var xAxis = this.component.xAxis.getAxis(serie.xAxisIndex);
+            var yAxis = this.component.yAxis.getAxis(serie.yAxisIndex);
             var pos;
             
             if (mpData.type
-                && (mpData.type == 'max' || mpData.type == 'min' || mpData.type == 'average')
+                && (mpData.type === 'max' || mpData.type === 'min' || mpData.type === 'average')
             ) {
                 // 特殊值内置支持
                 // 默认取纵值
-                var valueIndex = typeof mpData.valueIndex != 'undefined'
-                                 ? mpData.valueIndex : 1;
+                var valueIndex = mpData.valueIndex != null ? mpData.valueIndex : 1;
                 pos = [
-                    markCoordParams.xMarkMap[mpData.type + 'X' + valueIndex],
-                    markCoordParams.xMarkMap[mpData.type + 'Y' + valueIndex],
-                    markCoordParams.xMarkMap[mpData.type + 'Line' + valueIndex],
-                    markCoordParams.xMarkMap[mpData.type + valueIndex]
+                    xMarkMap[mpData.type + 'X' + valueIndex],
+                    xMarkMap[mpData.type + 'Y' + valueIndex],
+                    xMarkMap[mpData.type + 'Line' + valueIndex],
+                    xMarkMap[mpData.type + valueIndex]
                 ];
             }
             else {
                 pos = [
-                    typeof mpData.xAxis != 'string' 
-                    && xAxis.getCoordByIndex
-                    ? xAxis.getCoordByIndex(mpData.xAxis || 0)
-                    : xAxis.getCoord(mpData.xAxis || 0),
+                    typeof mpData.xAxis != 'string' && xAxis.getCoordByIndex
+                        ? xAxis.getCoordByIndex(mpData.xAxis || 0)
+                        : xAxis.getCoord(mpData.xAxis || 0),
                     
-                    typeof mpData.yAxis != 'string' 
-                    && yAxis.getCoordByIndex
-                    ? yAxis.getCoordByIndex(mpData.yAxis || 0)
-                    : yAxis.getCoord(mpData.yAxis || 0)
+                    typeof mpData.yAxis != 'string' && yAxis.getCoordByIndex
+                        ? yAxis.getCoordByIndex(mpData.yAxis || 0)
+                        : yAxis.getCoord(mpData.yAxis || 0)
                 ];
             }
             
             return pos;
-        }
-
-        /**
-         * 构造函数默认执行的初始化方法，也用于创建实例后动态修改
-         * @param {Object} newZr
-         * @param {Object} newSeries
-         * @param {Object} newComponent
-         */
-        function init(newOption, newComponent) {
-            component = newComponent;
-            refresh(newOption);
-        }
+        },
 
         /**
          * 刷新
          */
-        function refresh(newOption) {
+        refresh: function (newOption) {
             if (newOption) {
-                option = newOption;
-                series = option.series;
+                this.option = newOption;
+                this.series = newOption.series;
             }
-            self.clear();
-            _buildShape();
-        }
+            
+            this.backupShapeList();
+            this._buildShape();
+        },
         
         /**
          * 值域响应
          * @param {Object} param
          * @param {Object} status
          */
-        function ondataRange(param, status) {
-            if (component.dataRange) {
-                refresh();
+        ondataRange: function (param, status) {
+            if (this.component.dataRange) {
+                this.refresh();
                 status.needRefresh = true;
             }
             return;
         }
-
-        /**
-         * 动画设定
-         */
-        function animation() {
-            var duration = self.query(option, 'animationDuration');
-            var easing = self.query(option, 'animationEasing');
-            var x;
-            var y;
-            var serie;
-
-            for (var i = 0, l = self.shapeList.length; i < l; i++) {
-                if (self.shapeList[i]._main) {
-                    if (self.shapeList[i].shape == 'symbol') {
-                        continue;
-                    }
-                    serie = series[self.shapeList[i]._seriesIndex];
-                    x = self.shapeList[i]._x || 0;
-                    y = self.shapeList[i]._y || 0;
-                    zr.modShape(
-                        self.shapeList[i].id, 
-                        {
-                            scale : [0, 0, x, y]
-                        },
-                        true
-                    );
-                    zr.animate(self.shapeList[i].id, '')
-                        .when(
-                            (self.query(serie,'animationDuration')
-                            || duration),
-                            {scale : [1, 1, x, y]}
-                        )
-                        .start(
-                            self.query(serie, 'animationEasing') || easing
-                        );
-                }
-            }
-            
-            self.animationMark(duration, easing);
-        }
-
-        // 重载基类方法
-        self.getMarkCoord = getMarkCoord;
-        self.animation = animation;
-        
-        self.init = init;
-        self.refresh = refresh;
-        self.ondataRange = ondataRange;
-
-        init(option, component);
-    }
+    };
     
-    // 动态扩展zrender shape：symbol
-    require('../util/shape/symbol');
+    zrUtil.inherits(Scatter, ChartBase);
     
-    // 自注册
+    // 图表注册
     require('../chart').define('scatter', Scatter);
     
     return Scatter;

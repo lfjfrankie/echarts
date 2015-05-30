@@ -2,27 +2,27 @@
  * echarts数字运算相关
  *
  * @desc echarts基于Canvas，纯Javascript图表库，提供直观，生动，可交互，可个性化定制的数据统计图表。
- * @author Kener (@Kener-林峰, linzhifeng@baidu.com)
+ * @author Kener (@Kener-林峰, kener.linfeng@gmail.com)
  *
  */
 define(function() {
     function _trim(str) {
-        return str.replace(/^\s\s*/, '').replace(/\s\s*$/, '');
+        return str.replace(/^\s+/, '').replace(/\s+$/, '');
     }
     
     /**
      * 百分比计算
      */
     function parsePercent(value, maxValue) {
-        if (typeof(value) === 'string') {
+        if (typeof value === 'string') {
             if (_trim(value).match(/%$/)) {
                 return parseFloat(value) / 100 * maxValue;
-            } else {
-                return parseFloat(value);
             }
-        } else {
-            return value;
+
+            return parseFloat(value);
         }
+
+        return value;
     }
     
     /**
@@ -31,7 +31,7 @@ define(function() {
     function parseCenter(zr, center) {
         return [
             parsePercent(center[0], zr.getWidth()),
-            parsePercent(center[1], zr.getHeight()),
+            parsePercent(center[1], zr.getHeight())
         ];
     }
 
@@ -46,12 +46,14 @@ define(function() {
         var zrSize = Math.min(zr.getWidth(), zr.getHeight()) / 2;
         return [
             parsePercent(radius[0], zrSize),
-            parsePercent(radius[1], zrSize),
+            parsePercent(radius[1], zrSize)
         ];
     }
     
-    // 每三位默认加,格式化
-    function addCommas(x){
+    /**
+     * 每三位默认加,格式化
+     */
+    function addCommas(x) {
         if (isNaN(x)) {
             return '-';
         }
